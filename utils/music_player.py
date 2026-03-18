@@ -1,7 +1,7 @@
 """
 utils/music_player.py
-Core music player manager: tracks active calls, manages per-chat queues,
-handles PyTgCalls streaming lifecycle.
+Core music player manager — compatible with pytgcalls==3.0.0.dev24
+API reference: AudioPiped + HighQualityAudio from pytgcalls.types.input_stream
 """
 
 import asyncio
@@ -12,7 +12,6 @@ from pytgcalls.types.input_stream import AudioPiped
 from pytgcalls.types.input_stream.quality import HighQualityAudio
 from database import db_client
 from utils.music_downloader import download_audio, cleanup_file
-from config import config
 
 logger = logging.getLogger(__name__)
 
@@ -20,125 +19,71 @@ logger = logging.getLogger(__name__)
 class MusicPlayer:
     def __init__(self):
         self._pytgcalls: PyTgCalls | None = None
-        # Per-chat: current playing track info
-        self._current: dict[int, dict] = {}
-        # Per-chat: is paused?
-        self._paused: dict[int, bool] = {}
+        self._current: dict[int, dict] = {}   # chat_id → track info
+        self._paused:  dict[int, bool] = {}   # chat_id → paused flag
+
+    # ── Wiring ────────────────────────────────────────────────────────────────
 
     def set_pytgcalls(self, pytgcalls: PyTgCalls):
         self._pytgcalls = pytgcalls
-        # Register stream end callback
-        pytgcalls.on_stream_end()(self._on_stream_end)
+        # dev24 uses on_stream_end decorator exactly like this:
+        @pytgcalls.on_stream_end()
+        async def _stream_end(client, update: Update):
+            await self._on_stream_end(update)
 
-    async def _on_stream_end(self, client, update: Update):
-        """Called by PyTgCalls when current track finishes."""
+    # ── Internal callbacks ────────────────────────────────────────────────────
+
+    async def _on_stream_end(self, update: Update):
         chat_id = update.chat_id
-        logger.info(f"Stream ended in {chat_id}, trying next in queue.")
+        logger.info(f"[MusicPlayer] Stream ended in {chat_id}")
         await self._play_next(chat_id)
 
-    async def join_vc(self, chat_id: int):
-        """Join voice chat if not already in it."""
-        try:
-            active = await self._pytgcalls.get_active_calls()
-            for call in active:
-                if call.chat_id == chat_id:
-                    return  # Already in VC
-            # PyTgCalls join is implicit on play
-        except Exception:
-            pass
+    # ── Public API ────────────────────────────────────────────────────────────
 
-    async def play(self, chat_id: int, track: dict) -> bool:
+    async def play(self, chat_id: int, track: dict):
         """
-        Download and stream a track. If already playing, add to queue.
-        Returns True if started playing, False if added to queue.
+        Download & stream.
+        Returns: True  → playing now
+                 False → added to queue
+                 None  → download/call failed
         """
-        current = self._current.get(chat_id)
-
-        if current:
-            # Already playing — add to queue
+        if self._current.get(chat_id):
             await db_client.push_queue(chat_id, track)
             return False
 
-        # Download the track
-        logger.info(f"Downloading: {track.get('url', track.get('title'))}")
+        logger.info(f"[MusicPlayer] Downloading: {track.get('url', track.get('title'))}")
         downloaded = await download_audio(track.get("url", track.get("title", "")))
-
         if not downloaded:
-            return None  # Download failed
+            return None
 
-        track["path"] = downloaded["path"]
-        track["title"] = downloaded.get("title", track.get("title", "Unknown"))
-        track["duration"] = downloaded.get("duration", "N/A")
-        track["thumbnail"] = downloaded.get("thumbnail", "")
-
+        track.update({
+            "path":      downloaded["path"],
+            "title":     downloaded.get("title",     track.get("title",    "Unknown")),
+            "duration":  downloaded.get("duration",  "N/A"),
+            "thumbnail": downloaded.get("thumbnail", ""),
+        })
         self._current[chat_id] = track
 
         try:
             await self._pytgcalls.join_group_call(
                 chat_id,
-                AudioPiped(
-                    downloaded["path"],
-                    HighQualityAudio(),
-                ),
+                AudioPiped(downloaded["path"], HighQualityAudio()),
             )
             self._paused[chat_id] = False
-            logger.info(f"Playing '{track['title']}' in {chat_id}")
+            logger.info(f"[MusicPlayer] Now playing '{track['title']}' in {chat_id}")
             return True
         except Exception as e:
-            logger.error(f"PyTgCalls error: {e}")
+            logger.error(f"[MusicPlayer] join_group_call error: {e}")
             self._current.pop(chat_id, None)
             return None
 
-    async def _play_next(self, chat_id: int):
-        """Pop next from queue and start playing."""
-        # Clean up old track file
-        old = self._current.pop(chat_id, None)
-        if old and old.get("path"):
-            cleanup_file(old["path"])
-
-        next_track = await db_client.pop_queue(chat_id)
-        if not next_track:
-            # Nothing left — leave VC
-            try:
-                await self._pytgcalls.leave_group_call(chat_id)
-            except Exception:
-                pass
-            return
-
-        # Download and stream next
-        downloaded = await download_audio(next_track.get("url", ""))
-        if not downloaded:
-            await self._play_next(chat_id)
-            return
-
-        next_track["path"] = downloaded["path"]
-        next_track["title"] = downloaded.get("title", next_track.get("title", "Unknown"))
-        next_track["duration"] = downloaded.get("duration", "N/A")
-        self._current[chat_id] = next_track
-
-        try:
-            await self._pytgcalls.change_stream(
-                chat_id,
-                AudioPiped(downloaded["path"], HighQualityAudio()),
-            )
-            logger.info(f"Next track: '{next_track['title']}' in {chat_id}")
-        except Exception as e:
-            logger.error(f"change_stream error: {e}")
-            await self._play_next(chat_id)
-
-    async def add_to_queue(self, chat_id: int, track: dict):
-        """Add a track to the queue."""
-        await db_client.push_queue(chat_id, track)
-
     async def skip(self, chat_id: int) -> bool:
-        """Skip current track."""
         if chat_id not in self._current:
             return False
         await self._play_next(chat_id)
         return True
 
     async def stop(self, chat_id: int) -> bool:
-        """Stop playback and clear queue."""
         await db_client.clear_queue(chat_id)
         old = self._current.pop(chat_id, None)
         if old and old.get("path"):
@@ -170,8 +115,49 @@ class MusicPlayer:
             return False
 
     async def leave(self, chat_id: int) -> bool:
-        """Leave VC and cleanup."""
         return await self.stop(chat_id)
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    async def _play_next(self, chat_id: int):
+        """Pop next track from queue and stream it; leave VC if queue empty."""
+        old = self._current.pop(chat_id, None)
+        if old and old.get("path"):
+            cleanup_file(old["path"])
+
+        next_track = await db_client.pop_queue(chat_id)
+        if not next_track:
+            try:
+                await self._pytgcalls.leave_group_call(chat_id)
+            except Exception:
+                pass
+            return
+
+        downloaded = await download_audio(next_track.get("url", ""))
+        if not downloaded:
+            # Skip broken track and try next
+            await self._play_next(chat_id)
+            return
+
+        next_track.update({
+            "path":     downloaded["path"],
+            "title":    downloaded.get("title",    next_track.get("title", "Unknown")),
+            "duration": downloaded.get("duration", "N/A"),
+        })
+        self._current[chat_id] = next_track
+
+        try:
+            # dev24: use change_stream to swap audio without rejoining
+            await self._pytgcalls.change_stream(
+                chat_id,
+                AudioPiped(downloaded["path"], HighQualityAudio()),
+            )
+            logger.info(f"[MusicPlayer] Next: '{next_track['title']}' in {chat_id}")
+        except Exception as e:
+            logger.error(f"[MusicPlayer] change_stream error: {e}")
+            await self._play_next(chat_id)
+
+    # ── State accessors ───────────────────────────────────────────────────────
 
     def get_current(self, chat_id: int) -> dict | None:
         return self._current.get(chat_id)
@@ -183,5 +169,5 @@ class MusicPlayer:
         return chat_id in self._current
 
 
-# Singleton
+# Global singleton — imported everywhere
 music_player = MusicPlayer()
