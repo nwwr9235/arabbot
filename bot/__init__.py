@@ -1,39 +1,49 @@
 """
-bot/__init__.py — متوافق مع pytgcalls==2.0.0
+bot/init.py — Compatible with py-tgcalls 2.x
 """
 
+import logging
 from pyrogram import Client
 from py_tgcalls import PyTgCalls
 from config import config
-import logging
 
-logger = logging.getLogger(__name__)
-
+logger = logging.getLogger(name)
 
 class ArabBot(Client):
-    def __init__(self):
-        super().__init__(
-            "arabbot_session",
-            api_id=config.API_ID,
-            api_hash=config.API_HASH,
-            bot_token=config.BOT_TOKEN,
-            plugins=dict(root="bot/plugins"),
-            sleep_threshold=30,
-            workers=64,
-        )
-        self.pytgcalls = PyTgCalls(self)
+def init(self):
+super().init(
+name="arabbot",
+api_id=config.API_ID,
+api_hash=config.API_HASH,
+bot_token=config.BOT_TOKEN,
+plugins={"root": "bot/plugins"},
+sleep_threshold=30,
+workers=64,
+)
 
-    async def start(self):
-        await super().start()
+    # initialize voice client
+    self.call_py = PyTgCalls(self)
+
+async def start(self):
+    await super().start()
+
+    # start voice calls
+    await self.call_py.start()
+
+    # import after start to avoid circular import
+    try:
         from utils.music_player import music_player
-        music_player.set_pytgcalls(self.pytgcalls)
-        await self.pytgcalls.start()
-        me = await self.get_me()
-        logger.info(f"✅ Bot running as @{me.username} ({me.id})")
+        music_player.set_pytgcalls(self.call_py)
+    except Exception as e:
+        logger.warning(f"Music player not loaded: {e}")
 
-    async def stop(self):
-        try:
-            await self.pytgcalls.stop()
-        except Exception:
-            pass
-        await super().stop()
+    me = await self.get_me()
+    logger.info(f"✅ Bot running as @{me.username} ({me.id})")
+
+async def stop(self, *args):
+    try:
+        await self.call_py.stop()
+    except Exception:
+        pass
+
+    await super().stop()
