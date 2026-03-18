@@ -1,10 +1,9 @@
 # Core Telegram
-pyrogram==2.0.0
+pyrogram==2.0.106
 tgcrypto==1.2.5
 
-# PyTgCalls — نستخدم 2.1.0 لأنه مستقر ويصدّر PyTgCalls بشكل صحيح
-# dev24 غيّر الـ API بشكل كامل وكسر التوافق
-pytgcalls==2.1.0
+# PyTgCalls — 2.0.0 لا يحتاج tgcalls كـ dependency منفصل
+pytgcalls==2.0.0
 
 # Database
 motor==3.3.2
