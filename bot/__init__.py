@@ -1,18 +1,13 @@
 """
-bot/__init__.py
-Creates the main Pyrogram Client (ArabBot) and loads all plugin modules.
+bot/__init__.py — متوافق مع pytgcalls==2.1.0
 """
 
 from pyrogram import Client
 from pytgcalls import PyTgCalls
 from config import config
-import importlib
-import os
 import logging
 
 logger = logging.getLogger(__name__)
-
-PLUGINS_DIR = os.path.join(os.path.dirname(__file__), "plugins")
 
 
 class ArabBot(Client):
@@ -30,7 +25,6 @@ class ArabBot(Client):
 
     async def start(self):
         await super().start()
-        # Wire music_player singleton with this pytgcalls instance
         from utils.music_player import music_player
         music_player.set_pytgcalls(self.pytgcalls)
         await self.pytgcalls.start()
@@ -38,5 +32,8 @@ class ArabBot(Client):
         logger.info(f"✅ Bot running as @{me.username} ({me.id})")
 
     async def stop(self):
-        await self.pytgcalls.stop()
+        try:
+            await self.pytgcalls.stop()
+        except Exception:
+            pass
         await super().stop()
