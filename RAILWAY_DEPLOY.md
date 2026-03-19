@@ -9,7 +9,7 @@
 git init
 git add .
 git commit -m "Initial ArabBot deploy"
-git remote add origin https://github.com/USERNAME/Goop.git
+git remote add origin https://github.com/USERNAME/arabbot.git
 git push -u origin main
 ```
 
