@@ -1,8 +1,3 @@
-"""
-bot/__init__.py
-"""
-
-
 import logging
 from pyrogram import Client
 from py_tgcalls import PyTgCalls
