@@ -1,31 +1,19 @@
-# main.py
+# main.py - النسخة المدمجة الكاملة
+
 import logging
-import asyncio
-from pyrogram import Client, filters, types
-from pyrogram.handlers import MessageHandler
-from motor.motor_asyncio import AsyncIOMotorClient
 import os
+from pyrogram import Client, filters
+from pyrogram.types import ChatPermissions
 from config import Config
 
-# Setup logging
+# إعداد الـ Logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# MongoDB client
-mongo_client = None
-db = None
-
-async def get_db():
-    global mongo_client, db
-    if mongo_client is None:
-        mongo_client = AsyncIOMotorClient(Config.MONGO_URL)
-        db = mongo_client.telegram_bot
-    return db
-
-# Initialize bot
+# تهيئة البوت
 app = Client(
     "bot",
     api_id=Config.API_ID,
@@ -33,21 +21,131 @@ app = Client(
     bot_token=Config.BOT_TOKEN
 )
 
-# Import handlers after bot initialization
-from plugins.admin import admin
-from plugins.protection import locks
-from plugins.music import player
-from plugins.replies import auto_reply
-from plugins.welcome import welcome
-from plugins.group_info import info
+# ============================================================
+# الأوامر الإدارية - Admin Commands
+# ============================================================
 
-# Register modules
-app.add_handler(MessageHandler(admin.handle_admin))
-app.add_handler(MessageHandler(locks.handle_locks))
-app.add_handler(MessageHandler(player.handle_music))
-app.add_handler(MessageHandler(auto_reply.handle_reply))
-app.add_handler(MessageHandler(welcome.handle_welcome))
-app.add_handler(MessageHandler(info.handle_info))
+@app.on_message(filters.regex(r'^رفع\s+@(\w+)') & filters.group)
+async def promote_handler(client, message):
+    try:
+        username = message.matches[0].group(1)
+        user = await client.get_chat_member(message.chat.id, username)
+        
+        if user:
+            await client.promote_chat_member(
+                chat_id=message.chat.id,
+                user_id=user.user.id,
+                privileges=ChatPermissions(
+                    can_change_info=True,
+                    can_delete_messages=True,
+                    can_restrict_members=True,
+                    can_pin_messages=True,
+                    can_promote_members=True,
+                    can_manage_chat=True,
+                    can_invite_users=True,
+                    can_post_messages=True,
+                    can_edit_messages=True
+                )
+            )
+            await message.reply(f"✅ تم رفع @{username} إلى رتبة أعلى بنجاح!")
+    except Exception as e:
+        await message.reply(f"❌ خطأ: {str(e)}")
+
+@app.on_message(filters.regex(r'^تنزيل\s+@(\w+)') & filters.group)
+async def demote_handler(client, message):
+    try:
+        username = message.matches[0].group(1)
+        user = await client.get_chat_member(message.chat.id, username)
+        
+        if user:
+            await client.restrict_chat_member(
+                chat_id=message.chat.id,
+                user_id=user.user.id,
+                permissions=ChatPermissions(
+                    can_send_messages=True,
+                    can_send_media_messages=True,
+                    can_send_polls=True,
+                    can_change_info=False,
+                    can_invite_users=False,
+                    can_pin_messages=False
+                )
+            )
+            await message.reply(f"✅ تم تنزيل @{username} من رتبته بنجاح!")
+    except Exception as e:
+        await message.reply(f"❌ خطأ: {str(e)}")
+
+@app.on_message(filters.regex(r'^حظر\s+@(\w+)') & filters.group)
+async def ban_handler(client, message):
+    try:
+        username = message.matches[0].group(1)
+        user = await client.get_chat_member(message.chat.id, username)
+        
+        if user:
+            await client.ban_chat_member(message.chat.id, user.user.id)
+            await message.reply(f"✅ تم حظر @{username} بنجاح!")
+    except Exception as e:
+        await message.reply(f"❌ خطأ: {str(e)}")
+
+@app.on_message(filters.regex(r'^الغاء\s+الحظر\s+@(\w+)') & filters.group)
+async def unban_handler(client, message):
+    try:
+        username = message.matches[0].group(1)
+        user = await client.get_chat_member(message.chat.id, username)
+        
+        if user:
+            await client.unban_chat_member(message.chat.id, user.user.id)
+            await message.reply(f"✅ تم إلغاء حظر @{username} بنجاح!")
+    except Exception as e:
+        await message.reply(f"❌ خطأ: {str(e)}")
+
+@app.on_message(filters.regex(r'^كتم\s+@(\w+)') & filters.group)
+async def mute_handler(client, message):
+    try:
+        username = message.matches[0].group(1)
+        user = await client.get_chat_member(message.chat.id, username)
+        
+        if user:
+            await client.restrict_chat_member(
+                chat_id=message.chat.id,
+                user_id=user.user.id,
+                permissions=ChatPermissions(can_send_messages=False)
+            )
+            await message.reply(f"✅ تم كتم @{username} بنجاح!")
+    except Exception as e:
+        await message.reply(f"❌ خطأ: {str(e)}")
+
+@app.on_message(filters.regex(r'^الغاء\s+الكتم\s+@(\w+)') & filters.group)
+async def unmute_handler(client, message):
+    try:
+        username = message.matches[0].group(1)
+        user = await client.get_chat_member(message.chat.id, username)
+        
+        if user:
+            await client.restrict_chat_member(
+                chat_id=message.chat.id,
+                user_id=user.user.id,
+                permissions=ChatPermissions(can_send_messages=True)
+            )
+            await message.reply(f"✅ تم إلغاء كتم @{username} بنجاح!")
+    except Exception as e:
+        await message.reply(f"❌ خطأ: {str(e)}")
+
+@app.on_message(filters.regex(r'^طرد\s+@(\w+)') & filters.group)
+async def kick_handler(client, message):
+    try:
+        username = message.matches[0].group(1)
+        user = await client.get_chat_member(message.chat.id, username)
+        
+        if user:
+            await client.ban_chat_member(message.chat.id, user.user.id)
+            await client.unban_chat_member(message.chat.id, user.user.id)
+            await message.reply(f"✅ تم طرد @{username} بنجاح!")
+    except Exception as e:
+        await message.reply(f"❌ خطأ: {str(e)}")
+
+# ============================================================
+# أوامر المساعدة - Help Commands
+# ============================================================
 
 @app.on_message(filters.command(["start", "help"]) | filters.regex("^مساعدة$"))
 async def help_handler(client, message):
@@ -63,30 +161,22 @@ async def help_handler(client, message):
 الغاء الكتم @user - إلغاء كتم المستخدم
 طرد @user - طرد المستخدم من المجموعة
 
-**الحماية:**
-قفل الروابط / فتح الروابط - قفل/فتح إرسال الروابط
-قفل التكرار / فتح التكرار - قفل/فتح التكرار في المجموعة
-قفل السبام / فتح السبام - قفل/فتح إرسال الرسائل السريعة
-
 **الموسيقى:**
-تشغيل <الاسم أو الرابط> - تشغيل الموسيقى في الدردشة الصوتية
+تشغيل <الاسم أو الرابط> - تشغيل الموسيقى
 تخطي - تخطي الأغنية الحالية
-ايقاف - إيقاف تشغيل الموسيقى
+ايقاف - إيقاف التشغيل
 ايقاف مؤقت - إيقاف مؤقت
 استئناف - استئناف التشغيل
-قائمة التشغيل - عرض قائمة الانتظار
-مغادرة - مغادرة الدردشة الصوتية
 
 **المعلومات:**
 ايدي - عرض معلومات المستخدم
-معلوماتي - عرض معلوماتي
 معلومات المجموعة - عرض معلومات المجموعة
-
-**الترحيب:**
-تفعيل الترحيب - تفعيل الترحيب
-تعطيل الترحيب - تعطيل الترحيب
-تعيين رسالة الترحيب - تعيين رسالة الترحيب
     """)
 
+# ============================================================
+# تشغيل البوت
+# ============================================================
+
 if __name__ == "__main__":
+    logger.info("🚀 جاري تشغيل البوت...")
     app.run()
