@@ -1,22 +1,8 @@
-# Core Telegram
-pyrogram==2.0.106
-tgcrypto==1.2.5
-
-# الحزمة الصحيحة على PyPI هي py-tgcalls وليس pytgcalls
-# py-tgcalls تصدّر PyTgCalls بشكل صحيح
-py-tgcalls==0.9.7
-
-# Database
-motor==3.3.2
-pymongo==4.6.1
-dnspython==2.6.1
-
-# Music / Streaming
-yt-dlp>=2024.3.10
-youtube-search-python==1.6.6
-
-# Utilities
-python-dotenv==1.0.1
-aiofiles==23.2.1
-aiohttp==3.9.3
-psutil==5.9.8
+# requirements.txt
+pyrogram>=2.0.0
+py-tgcalls>=0.9.0
+tgcrypto>=1.2.5
+motor>=3.0.0
+python-dotenv>=0.19.0
+yt-dlp>=2023.0.0
+ffmpeg-python>=0.2.0
