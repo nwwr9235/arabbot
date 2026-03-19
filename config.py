@@ -1,44 +1,250 @@
-"""
-config.py - Bot configuration loaded from environment variables.
-"""
+Create a production-ready Telegram Supergroup Management + Music Bot similar to Rose Telegram Bot and VCPlayer Telegram Bot.
 
-import os
-from dotenv import load_dotenv
+The bot must support:
 
-load_dotenv()
+• Group moderation
+• Advanced protection system
+• Auto replies
+• Welcome system
+• Voice chat music player
 
+IMPORTANT:
+The bot must support Arabic commands without "/" and work fully inside group messages.
 
-class Config:
-    # ── Telegram credentials ──────────────────────────────────────────────────
-    BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")
-    API_ID: int = int(os.environ.get("API_ID", 0))
-    API_HASH: str = os.environ.get("API_HASH", "")
+---
 
-    # ── Owner / Sudo users ────────────────────────────────────────────────────
-    OWNER_ID: int = int(os.environ.get("OWNER_ID", 0))
-    SUDO_USERS: list[int] = [
-        int(x) for x in os.environ.get("SUDO_USERS", "").split() if x
-    ]
+TECH STACK
 
-    # ── MongoDB ───────────────────────────────────────────────────────────────
-    # Railway MongoDB plugin injects MONGO_URL automatically
-    MONGO_URI: str = os.environ.get("MONGO_URL") or os.environ.get("MONGO_URI", "mongodb://localhost:27017")
-    DB_NAME: str = os.environ.get("DB_NAME", "arabbot")
+Language: Python
 
-    # ── Music / Streaming ─────────────────────────────────────────────────────
-    MAX_QUEUE_SIZE: int = int(os.environ.get("MAX_QUEUE_SIZE", 50))
-    DOWNLOAD_DIR: str = os.environ.get("DOWNLOAD_DIR", "/tmp/arabbot_music")
+Libraries:
 
-    # ── Moderation ────────────────────────────────────────────────────────────
-    MAX_WARNINGS: int = int(os.environ.get("MAX_WARNINGS", 3))
-    WARN_ACTION: str = os.environ.get("WARN_ACTION", "mute")  # "mute" or "ban"
+- Pyrogram
+- PyTgCalls
+- TgCrypto
 
-    # ── Misc ──────────────────────────────────────────────────────────────────
-    LOG_CHANNEL: int = int(os.environ.get("LOG_CHANNEL", 0))
+Database:
 
-    @property
-    def all_admins(self) -> list[int]:
-        return [self.OWNER_ID] + self.SUDO_USERS
+- MongoDB (use async Motor)
 
+Streaming:
 
-config = Config()
+- yt-dlp
+- ffmpeg
+
+Architecture:
+
+- Async / await
+- Modular plugin system
+
+---
+
+DEPLOYMENT (VERY IMPORTANT)
+
+The bot must be fully ready to deploy on Railway.app
+
+Requirements:
+
+1. Create a Procfile
+   Example:
+   worker: python main.py
+
+2. Create requirements.txt
+
+3. Use environment variables instead of hardcoding:
+
+- API_ID
+- API_HASH
+- BOT_TOKEN
+- MONGO_URL
+- SUDO_USERS
+
+4. Add support for Railway environment
+
+5. Auto start on deploy
+
+6. Handle restart safely
+
+7. Logging for Railway console
+
+---
+
+ADMIN FEATURES (Arabic without slash)
+
+رفع @user
+تنزيل @user
+
+حظر @user
+الغاء الحظر @user
+
+كتم @user
+الغاء الكتم @user
+
+طرد @user
+
+قائمة الادمنية
+
+---
+
+WARNING SYSTEM
+
+انذار @user
+عرض الانذارات @user
+مسح الانذارات @user
+
+Auto punishment after 3 warnings:
+
+- mute or ban
+
+---
+
+PROTECTION SYSTEM
+
+Implement advanced locks:
+
+قفل الروابط / فتح الروابط
+قفل التكرار / فتح التكرار
+قفل السبام / فتح السبام
+قفل البوتات / فتح البوتات
+قفل الصور / فتح الصور
+قفل الفيديو / فتح الفيديو
+قفل الملفات / فتح الملفات
+
+Add:
+
+- anti flood
+- anti spam
+- anti links
+- blacklist words
+
+---
+
+WELCOME SYSTEM
+
+Commands:
+
+تفعيل الترحيب
+تعطيل الترحيب
+تعيين رسالة الترحيب
+
+Support variables:
+{user}
+{group}
+
+---
+
+AUTO REPLIES
+
+اضافة رد مرحبا = اهلا بك
+حذف رد مرحبا
+عرض الردود
+
+---
+
+MUSIC SYSTEM (VOICE CHAT)
+
+Commands:
+
+تشغيل <name or link>
+تخطي
+ايقاف
+ايقاف مؤقت
+استئناف
+قائمة التشغيل
+مغادرة
+
+Features:
+
+- auto join voice chat
+- queue system
+- YouTube search
+- fast streaming
+- stable playback
+
+---
+
+GROUP INFO
+
+ايدي
+معلوماتي
+معلومات @user
+معلومات المجموعة
+
+---
+
+UTILITY
+
+مساعدة
+الاوامر
+حالة البوت
+سرعة البوت
+
+---
+
+OWNER COMMANDS
+
+اعادة تشغيل
+اذاعة
+تحديث
+
+---
+
+DATABASE
+
+Store in MongoDB:
+
+- settings
+- locks
+- warnings
+- replies
+- welcome
+- music queue
+
+---
+
+PROJECT STRUCTURE
+
+bot/
+plugins/
+plugins/admin/
+plugins/music/
+plugins/protection/
+plugins/replies/
+plugins/welcome/
+
+database/
+utils/
+config/
+
+---
+
+FILES
+
+main.py
+config.py
+requirements.txt
+Procfile
+.env
+
+---
+
+EXTRA (IMPORTANT FOR RAILWAY)
+
+- The bot must not crash if connection drops
+- Auto reconnect to MongoDB
+- Handle Pyrogram session restart
+- Use logging module
+- Use try/except in all handlers
+
+---
+
+GOAL
+
+Build a high-performance Telegram bot that:
+
+• runs on Railway smoothly
+• supports Arabic commands without slash
+• manages large groups (100k+ members)
+• plays music in voice chat
+• has strong protection system
+• stable and production-ready
