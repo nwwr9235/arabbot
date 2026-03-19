@@ -1,105 +1,48 @@
-"""
-bot/plugins/welcome/welcome.py
-Welcome system: تفعيل الترحيب, تعطيل الترحيب, تعيين رسالة الترحيب
-Sends welcome message when users join.
-"""
-
+# plugins/welcome/welcome.py
+import re
 from pyrogram import Client, filters
-from pyrogram.types import Message, ChatMemberUpdated
-from database import db_client
-from utils import is_admin, mention
-from utils.arabic_commands import (
-    CMD_WELCOME_ON, CMD_WELCOME_OFF, CMD_SET_WELCOME
-)
-import logging
+from database.models import GroupSettings
 
-logger = logging.getLogger(__name__)
+WELCOME_PATTERN = re.compile(r'تفعيل\s+الترحيب|تعطيل\s+الترحيب|تعيين\s+رسالة\s+الترحيب\s+=\s+(.+)')
 
-DEFAULT_WELCOME = (
-    "👋 أهلاً وسهلاً {user} في **{group}**!\n"
-    "نتمنى لك وقتاً ممتعاً معنا. 🎉"
-)
-
-
-def arabic_cmd(cmd: str):
-    async def func(flt, client, message: Message):
-        if not message.text:
-            return False
-        return message.text.strip().startswith(cmd)
-    return filters.create(func)
-
-
-@Client.on_message(arabic_cmd(CMD_WELCOME_ON) & filters.group)
-async def welcome_on(client: Client, message: Message):
-    if not await is_admin(client, message.chat.id, message.from_user.id):
-        return await message.reply("❌ هذا الأمر للمشرفين فقط.")
-    await db_client.set_welcome(message.chat.id, {"enabled": True})
-    await message.reply("✅ تم تفعيل رسالة الترحيب.")
-
-
-@Client.on_message(arabic_cmd(CMD_WELCOME_OFF) & filters.group)
-async def welcome_off(client: Client, message: Message):
-    if not await is_admin(client, message.chat.id, message.from_user.id):
-        return await message.reply("❌ هذا الأمر للمشرفين فقط.")
-    await db_client.set_welcome(message.chat.id, {"enabled": False})
-    await message.reply("✅ تم تعطيل رسالة الترحيب.")
-
-
-@Client.on_message(arabic_cmd(CMD_SET_WELCOME) & filters.group)
-async def set_welcome_msg(client: Client, message: Message):
-    if not await is_admin(client, message.chat.id, message.from_user.id):
-        return await message.reply("❌ هذا الأمر للمشرفين فقط.")
-
-    text = message.text.strip()
-    welcome_text = text[len(CMD_SET_WELCOME):].strip()
-
-    if not welcome_text:
-        return await message.reply(
-            "❗ يرجى كتابة رسالة الترحيب بعد الأمر.\n\n"
-            "المتغيرات المتاحة:\n"
-            "`{user}` — اسم العضو\n"
-            "`{group}` — اسم المجموعة",
-            parse_mode="markdown"
+@app.on_message(filters.new_chat_members & filters.group)
+async def welcome_handler(client, message):
+    settings = await GroupSettings.get_or_create(message.chat.id)
+    
+    if not settings.welcome_enabled:
+        return
+    
+    for new_member in message.new_chat_members:
+        welcome_text = settings.welcome_message.format(
+            user=new_member.first_name,
+            group=message.chat.title
         )
+        
+        await message.reply(welcome_text)
 
-    await db_client.set_welcome(message.chat.id, {"message": welcome_text, "enabled": True})
-    await message.reply(
-        f"✅ تم تعيين رسالة الترحيب:\n\n{welcome_text}",
-        parse_mode="markdown"
-    )
+@app.on_message(filters.regex(r'^تفعيل\s+الترحيب') & filters.group)
+@is_admin
+async def enable_welcome(client, message):
+    settings = await GroupSettings.get_or_create(message.chat.id)
+    settings.welcome_enabled = True
+    await settings.save()
+    
+    await message.reply("✅ تم تفعيل الترحيب بنجاح!")
 
+@app.on_message(filters.regex(r'^تعطيل\s+الترحيب') & filters.group)
+@is_admin
+async def disable_welcome(client, message):
+    settings = await GroupSettings.get_or_create(message.chat.id)
+    settings.welcome_enabled = False
+    await settings.save()
+    
+    await message.reply("✅ تم تعطيل الترحيب بنجاح!")
 
-@Client.on_chat_member_updated(filters.group)
-async def greet_new_member(client: Client, update: ChatMemberUpdated):
-    """Send welcome message when a new member joins."""
-    if not update.new_chat_member:
-        return
-
-    # Only trigger on join (not on ban/kick/etc.)
-    from pyrogram.enums import ChatMemberStatus
-    old_status = update.old_chat_member.status if update.old_chat_member else None
-    new_status = update.new_chat_member.status
-
-    if new_status not in (ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED):
-        return
-    if old_status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER):
-        return
-
-    chat_id = update.chat.id
-    welcome_data = await db_client.get_welcome(chat_id)
-
-    if not welcome_data.get("enabled", False):
-        return
-
-    user = update.new_chat_member.user
-    if user.is_bot:
-        return
-
-    welcome_msg = welcome_data.get("message", DEFAULT_WELCOME)
-    welcome_msg = welcome_msg.replace("{user}", mention(user.id, user.first_name))
-    welcome_msg = welcome_msg.replace("{group}", update.chat.title or "المجموعة")
-
-    try:
-        await client.send_message(chat_id, welcome_msg, parse_mode="markdown")
-    except Exception as e:
-        logger.debug(f"Welcome send error: {e}")
+@app.on_message(filters.regex(r'^تعيين\s+رسالة\s+الترحيب\s+=\s+(.+)') & filters.group)
+@is_admin
+async def set_welcome(client, message):
+    settings = await GroupSettings.get_or_create(message.chat.id)
+    settings.welcome_message = message.matches[0].group(1)
+    await settings.save()
+    
+    await message.reply("✅ تم تعيين رسالة الترحيب بنجاح!")
