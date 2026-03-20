@@ -1,6 +1,6 @@
 """
 music_bot/player.py
-محرك التشغيل الصوتي — يتحكم في PyTgCalls
+محرك التشغيل الصوتي — متوافق مع py-tgcalls v2.x
 """
 
 import asyncio
@@ -8,50 +8,31 @@ import logging
 import os
 import yt_dlp
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream
+from pytgcalls.types import MediaStream, AudioQuality
 from music_bot.queue_manager import queue_manager, Track
 
 logger = logging.getLogger(__name__)
 
-# ─── إعداد yt-dlp ────────────────────────────────────────────────
 YDL_OPTS = {
-    "format":            "bestaudio/best",
-    "noplaylist":        True,
-    "quiet":             True,
-    "no_warnings":       True,
-    "extract_flat":      False,
-    "postprocessors": [{
-        "key":            "FFmpegExtractAudio",
-        "preferredcodec": "mp3",
-        "preferredquality": "192",
-    }],
-    "outtmpl": "/tmp/music/%(id)s.%(ext)s",
+    "format":        "bestaudio/best",
+    "noplaylist":    True,
+    "quiet":         True,
+    "no_warnings":   True,
+    "outtmpl":       "/tmp/music/%(id)s.%(ext)s",
 }
 
 os.makedirs("/tmp/music", exist_ok=True)
 
 
 class MusicPlayer:
-    """
-    يتولى التحكم الكامل في Voice Chat:
-    - تنزيل الأغاني عبر yt-dlp
-    - تشغيلها عبر PyTgCalls
-    - الانتقال التلقائي للأغنية التالية
-    """
 
     def __init__(self, tgcalls: PyTgCalls):
         self.calls = tgcalls
         self._register_callbacks()
 
-    # ---------------------------------------------------------------- #
-    # واجهة عامة
-    # ---------------------------------------------------------------- #
+    # ── واجهة عامة ───────────────────────────────────────────────
 
     async def play(self, chat_id: int, query: str, user_id: int) -> dict:
-        """
-        إضافة أغنية للقائمة وبدء التشغيل إن لم يكن هناك شيء يُشغَّل.
-        يُرجع: {"ok": True, "title": ..., "position": ...}
-        """
         try:
             title, file_path = await self._fetch(query)
         except Exception as e:
@@ -68,8 +49,7 @@ class MusicPlayer:
         return {"ok": True, "title": title, "position": pos}
 
     async def stop(self, chat_id: int) -> dict:
-        gq = queue_manager.get(chat_id)
-        gq.clear()
+        queue_manager.get(chat_id).clear()
         try:
             await self.calls.leave_call(chat_id)
         except Exception:
@@ -77,7 +57,7 @@ class MusicPlayer:
         return {"ok": True}
 
     async def skip(self, chat_id: int) -> dict:
-        gq   = queue_manager.get(chat_id)
+        gq         = queue_manager.get(chat_id)
         next_track = gq.skip()
         if next_track:
             await self._start_playback(chat_id)
@@ -109,9 +89,7 @@ class MusicPlayer:
     def get_queue(self, chat_id: int) -> dict:
         return {"ok": True, "queue": queue_manager.get(chat_id).to_list()}
 
-    # ---------------------------------------------------------------- #
-    # دوال داخلية
-    # ---------------------------------------------------------------- #
+    # ── دوال داخلية ──────────────────────────────────────────────
 
     async def _start_playback(self, chat_id: int):
         gq    = queue_manager.get(chat_id)
@@ -124,7 +102,10 @@ class MusicPlayer:
         try:
             await self.calls.play(
                 chat_id,
-                MediaStream(track.url),
+                MediaStream(
+                    track.url,
+                    audio_parameters=AudioQuality.HIGH,
+                ),
             )
             logger.info(f"▶️ تشغيل في {chat_id}: {track.title}")
         except Exception as e:
@@ -132,11 +113,10 @@ class MusicPlayer:
             gq.is_playing = False
 
     def _register_callbacks(self):
-        """الانتقال التلقائي عند انتهاء الأغنية"""
         @self.calls.on_stream_end()
         async def on_stream_end(_, update):
-            chat_id = update.chat_id
-            gq = queue_manager.get(chat_id)
+            chat_id    = update.chat_id
+            gq         = queue_manager.get(chat_id)
             next_track = gq.skip()
             if next_track:
                 await self._start_playback(chat_id)
@@ -150,12 +130,8 @@ class MusicPlayer:
 
     @staticmethod
     async def _fetch(query: str) -> tuple[str, str]:
-        """
-        تنزيل الأغنية وإرجاع (title, file_path).
-        يدعم: اسم الأغنية، رابط YouTube.
-        """
         search = query if query.startswith("http") else f"ytsearch1:{query}"
-        loop = asyncio.get_event_loop()
+        loop   = asyncio.get_event_loop()
 
         def _download():
             with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
@@ -163,7 +139,7 @@ class MusicPlayer:
                 if "entries" in info:
                     info = info["entries"][0]
                 title     = info.get("title", query)
-                file_path = ydl.prepare_filename(info).replace(".webm", ".mp3").replace(".m4a", ".mp3")
+                file_path = ydl.prepare_filename(info)
                 return title, file_path
 
         return await loop.run_in_executor(None, _download)
