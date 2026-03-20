@@ -1,26 +1,16 @@
 # main.py - النسخة المتوافقة مع Railway
 
-# تثبيت المكتبات تلقائياً
-import subprocess
-import sys
+# استيراد py-tgcalls الجديدة
+from pytgcalls import PyTgCalls
+from pytgcalls.types import AudioPiped
 
-packages = [
-    "pyrogram>=2.0.0",
-    "pytgcalls>=0.9.0", 
-    "tgcrypto>=1.2.5",
-    "motor>=3.0.0",
-    "python-dotenv>=0.19.0",
-    "yt-dlp>=2023.0.0",
-    "ffmpeg-python>=0.2.0",
-    "pydantic>=1.10.0"
-]
+# تهيئة
+pytgcalls = PyTgCalls(app)
 
-for pkg in packages:
-    try:
-        __import__(pkg.split(">=")[0].replace("-", "_"))
-    except ImportError:
-        print(f"📦 تثبيت {pkg}...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", pkg])
+# تشغيل صوت
+audio = AudioPiped("file.mp3")
+await pytgcalls.join_group_call(chat_id, audio)
+
 
 import logging
 import os
