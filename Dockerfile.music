@@ -7,10 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY music_bot/requirements.txt ./music_bot/requirements.txt
+
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r music_bot/requirements.txt
 
-# التحقق من تثبيت PyTgCalls
+# التحقق من التوافق
 RUN python -c "from pytgcalls import PyTgCalls; print('✅ PyTgCalls جاهز')"
 
 COPY shared/ ./shared/
