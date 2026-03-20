@@ -78,53 +78,9 @@ async def get_target_from_reply(message):
     return None
 
 # ============================================================
-# نظام الموسيقى
+# نظام الموسيقى (للإصدارات 2.x)
 # ============================================================
-
-async def download_song(query):
-    """تحميل الأغنية من YouTube"""
-    if youtube_dl is None:
-        logger.error("❌ لا يوجد محمل فيديو")
-        return None
-    
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'outtmpl': 'downloads/%(title)s.%(ext)s',
-        'quiet': True,
-        'no_warnings': True,
-    }
-    
-    try:
-        os.makedirs('downloads', exist_ok=True)
-        
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(f"ytsearch:{query}", download=False)
-            if 'entries' in info:
-                info = info['entries'][0]
-            
-            title = info.get('title', 'Unknown')
-            duration = info.get('duration', 0)
-            url = info.get('webpage_url', '')
-            
-            file_path = ydl.prepare_filename(info)
-            ydl.download([url])
-            
-            final_path = file_path.replace('.webm', '.mp3').replace('.m4a', '.mp3')
-            
-            return {
-                'title': title,
-                'file_path': final_path,
-                'duration': duration,
-                'url': url
-            }
-    except Exception as e:
-        logger.error(f"Error downloading: {e}")
-        return None
+from pytgcalls.types import AudioPiped
 
 async def play_next_song(client, chat_id):
     """تشغيل الأغنية التالية"""
@@ -140,18 +96,78 @@ async def play_next_song(client, chat_id):
     is_playing[chat_id] = True
     
     try:
-        # ✅ استخدام play() مع مسار الملف مباشرة
-        await pytgcalls.play(chat_id, audio_source=song['file_path'])
+        audio = AudioPiped(song['file_path'])
+        try:
+            await pytgcalls.join_group_call(chat_id, audio)
+        except Exception as e:
+            # إذا كان في المكالمة بالفعل، قم بتغيير الدفق
+            await pytgcalls.change_stream(chat_id, audio)
         
         await client.send_message(
             chat_id,
             f"🎵 **يتم تشغيل:**\n{song['title']}\n⏱ المدة: {song['duration']//60}:{song['duration']%60:02d}"
         )
-        
     except Exception as e:
         logger.error(f"Error playing: {e}")
         is_playing[chat_id] = False
         await client.send_message(chat_id, f"❌ فشل: {str(e)}")
+
+# ============================================================
+# معالج انتهاء التشغيل التلقائي (للإصدارات 2.x)
+# ============================================================
+@pytgcalls.on_stream_end()
+async def on_stream_end(client, chat_id):
+    await play_next_song(app, chat_id)
+
+# أوامر الموسيقى المعدلة:
+@app.on_message(filters.regex(r'^تخطي$') & filters.group)
+async def skip_handler(client, message):
+    chat_id = message.chat.id
+    if not is_playing.get(chat_id, False):
+        return await message.reply("⚠️ لا يوجد تشغيل حالي")
+    try:
+        await pytgcalls.leave_group_call(chat_id)
+        await message.reply("⏭ تم التخطي")
+        await asyncio.sleep(1)
+        await play_next_song(client, chat_id)
+    except Exception as e:
+        await message.reply(f"❌ فشل: {str(e)}")
+
+@app.on_message(filters.regex(r'^ايقاف$') & filters.group)
+async def stop_handler(client, message):
+    chat_id = message.chat.id
+    if not is_playing.get(chat_id, False):
+        return await message.reply("⚠️ لا يوجد تشغيل")
+    try:
+        await pytgcalls.leave_group_call(chat_id)
+        music_queues[chat_id] = []
+        is_playing[chat_id] = False
+        current_song[chat_id] = None
+        await message.reply("⏹ تم الإيقاف")
+    except Exception as e:
+        await message.reply(f"❌ فشل: {str(e)}")
+
+@app.on_message(filters.regex(r'^ايقاف مؤقت$') & filters.group)
+async def pause_handler(client, message):
+    chat_id = message.chat.id
+    if not is_playing.get(chat_id, False):
+        return await message.reply("⚠️ لا يوجد تشغيل")
+    try:
+        await pytgcalls.pause_stream(chat_id)
+        await message.reply("⏸ تم الإيقاف المؤقت")
+    except Exception as e:
+        await message.reply(f"❌ فشل: {str(e)}")
+
+@app.on_message(filters.regex(r'^استئناف$') & filters.group)
+async def resume_handler(client, message):
+    chat_id = message.chat.id
+    if not is_playing.get(chat_id, False):
+        return await message.reply("⚠️ لا يوجد تشغيل متوقف")
+    try:
+        await pytgcalls.resume_stream(chat_id)
+        await message.reply("▶️ تم الاستئناف")
+    except Exception as e:
+        await message.reply(f"❌ فشل: {str(e)}")
 
 # ============================================================
 # معالج انتهاء التشغيل التلقائي
