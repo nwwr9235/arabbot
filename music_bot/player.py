@@ -1,155 +1,62 @@
 """
-music_bot/player.py
-محرك التشغيل الصوتي — متوافق مع py-tgcalls v2.2.11 + pyrofork
+music_bot/main.py
+نقطة انطلاق بوت الموسيقى
+يستخدم pyrofork (بديل pyrogram) للتوافق مع py-tgcalls v2
 """
 
 import asyncio
 import logging
-import os
-import yt_dlp
+import uvicorn
+from pyrogram import Client          # pyrofork يُعرِّف نفسه كـ pyrogram
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality
-from pytgcalls.types import StreamEnded  # ✅ الاستيراد الصحيح
 
-from music_bot.queue_manager import queue_manager, Track
+from shared.config import MusicConfig
+from music_bot.player import MusicPlayer
+from music_bot.api_server import build_app
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
+)
 logger = logging.getLogger(__name__)
 
-YDL_OPTS = {
-    "format":      "bestaudio/best",
-    "noplaylist":  True,
-    "quiet":       True,
-    "no_warnings": True,
-    "outtmpl":     "/tmp/music/%(id)s.%(ext)s",
-}
 
-os.makedirs("/tmp/music", exist_ok=True)
+async def main():
+    # ─── 1. Pyrogram Client (pyrofork) ───────────────────────────
+    pyrogram_client = Client(
+        "music_bot_session",
+        api_id=MusicConfig.API_ID,
+        api_hash=MusicConfig.API_HASH,
+        bot_token=MusicConfig.BOT_TOKEN,
+    )
+
+    # ─── 2. PyTgCalls ────────────────────────────────────────────
+    tgcalls = PyTgCalls(pyrogram_client)
+
+    # ─── 3. MusicPlayer ──────────────────────────────────────────
+    player = MusicPlayer(tgcalls)
+
+    # ─── 4. FastAPI ──────────────────────────────────────────────
+    fastapi_app = build_app(player)
+
+    config = uvicorn.Config(
+        fastapi_app,
+        host="0.0.0.0",
+        port=MusicConfig.API_PORT,
+        loop="asyncio",
+        log_level="warning",
+    )
+    server = uvicorn.Server(config)
+
+    logger.info(f"🎵 بوت الموسيقى يعمل | API port: {MusicConfig.API_PORT}")
+
+    # ✅ بدء تشغيل العميل و tgcalls والخادم
+    # ملاحظة: tgcalls.start() تدير pyrogram_client داخلياً
+    await asyncio.gather(
+        tgcalls.start(),
+        server.serve(),
+    )
 
 
-class MusicPlayer:
-
-    def __init__(self, tgcalls: PyTgCalls):
-        self.calls = tgcalls
-        self._register_callbacks()
-
-    # ── واجهة عامة ───────────────────────────────────────────────
-
-    async def play(self, chat_id: int, query: str, user_id: int) -> dict:
-        try:
-            title, file_path = await self._fetch(query)
-        except Exception as e:
-            logger.error(f"yt-dlp error: {e}")
-            return {"ok": False, "error": f"فشل التنزيل: {e}"}
-
-        track = Track(title=title, url=file_path, query=query, user_id=user_id)
-        gq    = queue_manager.get(chat_id)
-        pos   = gq.add(track)
-
-        if not gq.is_playing:
-            await self._start_playback(chat_id)
-
-        return {"ok": True, "title": title, "position": pos}
-
-    async def stop(self, chat_id: int) -> dict:
-        queue_manager.get(chat_id).clear()
-        try:
-            await self.calls.leave_call(chat_id)
-        except Exception:
-            pass
-        return {"ok": True}
-
-    async def skip(self, chat_id: int) -> dict:
-        gq         = queue_manager.get(chat_id)
-        next_track = gq.skip()
-        if next_track:
-            await self._start_playback(chat_id)
-            return {"ok": True, "next_title": next_track.title}
-        else:
-            try:
-                await self.calls.leave_call(chat_id)
-            except Exception:
-                pass
-            gq.is_playing = False
-            return {"ok": True, "next_title": None}
-
-    async def pause(self, chat_id: int) -> dict:
-        try:
-            await self.calls.pause_stream(chat_id)
-            queue_manager.get(chat_id).is_paused = True
-            return {"ok": True}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    async def resume(self, chat_id: int) -> dict:
-        try:
-            await self.calls.resume_stream(chat_id)
-            queue_manager.get(chat_id).is_paused = False
-            return {"ok": True}
-        except Exception as e:
-            return {"ok": False, "error": str(e)}
-
-    def get_queue(self, chat_id: int) -> dict:
-        return {"ok": True, "queue": queue_manager.get(chat_id).to_list()}
-
-    # ── دوال داخلية ──────────────────────────────────────────────
-
-    async def _start_playback(self, chat_id: int):
-        gq    = queue_manager.get(chat_id)
-        track = gq.current()
-        if not track:
-            gq.is_playing = False
-            return
-        gq.is_playing = True
-        gq.is_paused  = False
-        try:
-            await self.calls.play(
-                chat_id,
-                MediaStream(
-                    track.url,
-                    audio_parameters=AudioQuality.HIGH,
-                ),
-            )
-            logger.info(f"▶️ تشغيل في {chat_id}: {track.title}")
-        except Exception as e:
-            logger.error(f"خطأ في التشغيل: {e}")
-            gq.is_playing = False
-
-    def _register_callbacks(self):
-        """
-        ✅ طريقة py-tgcalls v2: استخدام on_update() مع StreamEnded
-        """
-        @self.calls.on_update()
-        async def on_stream_ended(_, update):
-            # التحقق إذا كان التحديث هو انتهاء البث
-            if isinstance(update, StreamEnded):
-                chat_id = update.chat_id
-                logger.info(f"🔴 انتهى البث في {chat_id}")
-                
-                gq = queue_manager.get(chat_id)
-                next_track = gq.skip()
-                
-                if next_track:
-                    await self._start_playback(chat_id)
-                else:
-                    gq.is_playing = False
-                    try:
-                        await self.calls.leave_call(chat_id)
-                    except Exception:
-                        pass
-                    logger.info(f"✅ انتهت القائمة في {chat_id}")
-
-    @staticmethod
-    async def _fetch(query: str) -> tuple[str, str]:
-        search = query if query.startswith("http") else f"ytsearch1:{query}"
-        loop   = asyncio.get_event_loop()
-
-        def _download():
-            with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
-                info = ydl.extract_info(search, download=True)
-                if "entries" in info:
-                    info = info["entries"][0]
-                title     = info.get("title", query)
-                file_path = ydl.prepare_filename(info)
-                return title, file_path
-
-        return await loop.run_in_executor(None, _download)
+if __name__ == "__main__":
+    asyncio.run(main())
