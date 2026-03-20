@@ -1,19 +1,22 @@
 FROM python:3.11-slim
 
-# ── System dependencies ───────────────────────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ffmpeg git curl wget build-essential \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-# ── Python dependencies ───────────────────────────────────────────────────────
-COPY requirements.txt .
-
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir \
+    pyrogram>=2.0.0 \
+    py-tgcalls>=1.0.0 \
+    tgcrypto>=1.2.5 \
+    motor>=3.0.0 \
+    python-dotenv>=0.19.0 \
+    yt-dlp>=2023.0.0 \
+    ffmpeg-python>=0.2.0 \
+    pydantic>=1.10.0
 
-# ── Copy source code ──────────────────────────────────────────────────────────
 COPY . .
 
 RUN mkdir -p /tmp/arabbot_music
