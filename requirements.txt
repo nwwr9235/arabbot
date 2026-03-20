@@ -1,8 +1,23 @@
+# ✅ py-tgcalls أحدث إصدار مع API جديد
+py-tgcalls>=2.2.0
+
+# Pyrogram
 pyrogram>=2.0.0
-py-tgcalls==1.2.5  # <-- تثبيت إصدار أقدم
+
+# التشفير
 tgcrypto>=1.2.5
+
+# قاعدة البيانات (إذا تستخدم)
 motor>=3.0.0
-python-dotenv>=0.19.0
+
+# متغيرات البيئة
+python-dotenv>=1.2.2
+
+# تحميل YouTube
 yt-dlp>=2023.0.0
+
+# FFmpeg
 ffmpeg-python>=0.2.0
+
+# التحقق من البيانات
 pydantic>=1.10.0
