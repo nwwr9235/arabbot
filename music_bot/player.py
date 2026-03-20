@@ -11,7 +11,7 @@ from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
 from pytgcalls.types import StreamEnded
 
-# ❌ لا تضف هنا: from music_bot.player import MusicPlayer
+
 
 logger = logging.getLogger(__name__)
 
