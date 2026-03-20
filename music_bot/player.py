@@ -9,7 +9,7 @@ import os
 import yt_dlp
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
-from pytgcalls.types import StreamAudioEnded, StreamVideoEnded
+from pytgcalls.types import AudioStreamEnded, VideoStreamEnded
 from music_bot.queue_manager import queue_manager, Track
 
 logger = logging.getLogger(__name__)
