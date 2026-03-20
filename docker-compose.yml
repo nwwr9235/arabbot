@@ -1,34 +1,44 @@
 version: "3.9"
 
 services:
-  arabbot:
-    build: .
-    container_name: arabbot
-    restart: unless-stopped
-    env_file:
-      - .env
-    depends_on:
-      - mongodb
-    volumes:
-      - ./arabbot_session.session:/app/arabbot_session.session
-      - /tmp/arabbot_music:/tmp/arabbot_music
-    networks:
-      - botnet
 
-  mongodb:
-    image: mongo:7.0
-    container_name: arabbot_mongo
+  # ─── بوت الإدارة ───────────────────────────────────────────────
+  admin_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.admin
+    container_name: arabbot_admin
     restart: unless-stopped
-    volumes:
-      - mongo_data:/data/db
-    networks:
-      - botnet
+    env_file: .env
     environment:
-      MONGO_INITDB_DATABASE: arabbot
+      # عنوان بوت الموسيقى داخل Docker network
+      MUSIC_API_URL: "http://music_bot:8000"
+    depends_on:
+      - music_bot
+    networks:
+      - arabbot_net
 
-volumes:
-  mongo_data:
+  # ─── بوت الموسيقى ──────────────────────────────────────────────
+  music_bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.music
+    container_name: arabbot_music
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      MUSIC_API_PORT: "8000"
+    ports:
+      # لا تعرّض المنفذ خارجياً في الإنتاج — داخلي فقط
+      - "127.0.0.1:8000:8000"
+    networks:
+      - arabbot_net
+    volumes:
+      - music_cache:/tmp/music
 
 networks:
-  botnet:
+  arabbot_net:
     driver: bridge
+
+volumes:
+  music_cache:

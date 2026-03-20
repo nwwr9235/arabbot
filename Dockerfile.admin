@@ -1,0 +1,21 @@
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# نسخ المتطلبات أولاً لتحسين cache
+COPY admin_bot/requirements.txt ./admin_bot/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r admin_bot/requirements.txt
+
+# نسخ الكود
+COPY shared/ ./shared/
+COPY admin_bot/ ./admin_bot/
+
+ENV PYTHONPATH=/app
+ENV PYTHONUNBUFFERED=1
+
+CMD ["python", "-m", "admin_bot.main"]
