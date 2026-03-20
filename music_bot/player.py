@@ -1,6 +1,6 @@
 """
 music_bot/player.py
-محرك التشغيل الصوتي — متوافق مع py-tgcalls v2.x
+محرك التشغيل الصوتي — متوافق مع py-tgcalls v2.2.x
 """
 
 import asyncio
@@ -8,17 +8,18 @@ import logging
 import os
 import yt_dlp
 from pytgcalls import PyTgCalls
-from pytgcalls.types import MediaStream, AudioQuality
+from pytgcalls.types import MediaStream, AudioQuality, Update
+from pytgcalls.filters import Filter
 from music_bot.queue_manager import queue_manager, Track
 
 logger = logging.getLogger(__name__)
 
 YDL_OPTS = {
-    "format":        "bestaudio/best",
-    "noplaylist":    True,
-    "quiet":         True,
-    "no_warnings":   True,
-    "outtmpl":       "/tmp/music/%(id)s.%(ext)s",
+    "format":      "bestaudio/best",
+    "noplaylist":  True,
+    "quiet":       True,
+    "no_warnings": True,
+    "outtmpl":     "/tmp/music/%(id)s.%(ext)s",
 }
 
 os.makedirs("/tmp/music", exist_ok=True)
@@ -113,8 +114,12 @@ class MusicPlayer:
             gq.is_playing = False
 
     def _register_callbacks(self):
-        @self.calls.on_stream_end()
-        async def on_stream_end(_, update):
+        """
+        في py-tgcalls v2، الحدث عند انتهاء البث هو:
+        @calls.on_update(Filter.stream_video_ended | Filter.stream_audio_ended)
+        """
+        @self.calls.on_update(Filter.stream_audio_ended)
+        async def on_stream_end(client, update: Update):
             chat_id    = update.chat_id
             gq         = queue_manager.get(chat_id)
             next_track = gq.skip()
