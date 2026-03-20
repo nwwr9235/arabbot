@@ -1,23 +1,8 @@
-# Pyrogram الإصدار المتوافق مع pytgcalls 3.0
 pyrogram==2.0.106
-
-# py-tgcalls 3 (لا تستخدم py-tgcalls)
-pytgcalls==3.0.0
-
-# التشفير
+pytgcalls==3.0.0.dev24
 tgcrypto==1.2.5
-
-# قاعدة البيانات (إذا تستخدم)
 motor==3.0.0
-
-# متغيرات البيئة
 python-dotenv==1.0.0
-
-# تحميل YouTube
 yt-dlp==2024.7.9
-
-# FFmpeg
 ffmpeg-python==0.2.0
-
-# التحقق من البيانات (اختياري)
 pydantic==1.10.15
