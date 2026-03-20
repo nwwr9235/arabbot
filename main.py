@@ -1,4 +1,4 @@
-# main.py - النسخة المصححة لـ Railway
+# main.py - النسخة المصححة لـ py-tgcalls الجديدة
 
 import logging
 import os
@@ -9,10 +9,11 @@ from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import ChatPermissions, ChatPrivileges
 from pyrogram.errors import UserAdminInvalid, ChatAdminRequired, UserNotParticipant
+
+# ✅ استيراد py-tgcalls الجديدة (مع الشرطة)
 from pytgcalls import PyTgCalls
-from pytgcalls.types import Update
-# ✅ تم تصحيح الاستيراد - PyTgCalls الجديد يستخدم AudioPiped بدلاً من InputAudioStream
-from pytgcalls.types import AudioPiped
+from pytgcalls.types import AudioPiped, AudioVideoPiped
+
 from config import Config
 
 logging.basicConfig(
@@ -143,22 +144,15 @@ async def play_next_song(client, chat_id):
     is_playing[chat_id] = True
     
     try:
-        # ✅ تم التصحيح: استخدام AudioPiped بدلاً من InputStream/InputAudioStream
-        audio_file = AudioPiped(song['file_path'])
+        # ✅ استخدام AudioPiped مع py-tgcalls الجديدة
+        audio = AudioPiped(song['file_path'])
         
-        # الانضمام إلى المكالمة إذا لم نكن فيها
+        # الانضمام إلى المكالمة أو تغيير الستريم
         try:
-            await pytgcalls.join_group_call(
-                chat_id,
-                audio_file
-            )
+            await pytgcalls.join_group_call(chat_id, audio)
         except Exception as e:
-            logger.error(f"Error joining call: {e}")
-            # ربما نحن بالفعل في المكالمة، نحاول التشغيل مباشرة
-            await pytgcalls.change_stream(
-                chat_id,
-                audio_file
-            )
+            logger.error(f"Error joining call (maybe already joined): {e}")
+            await pytgcalls.change_stream(chat_id, audio)
         
         # إرسال رسالة التشغيل
         await client.send_message(
