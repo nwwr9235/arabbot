@@ -13,7 +13,7 @@ RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
 # ✅ التحقق
-RUN python -c "from pytgcalls import PyTgCalls; from pytgcalls.types import AudioPiped; print('OK')"
+RUN python -c "from pytgcalls import PyTgCalls; print('OK')"
 
 COPY . .
 
