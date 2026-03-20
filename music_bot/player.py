@@ -9,7 +9,7 @@ import os
 import yt_dlp
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality
-from pytgcalls.types import StreamEnded  # ✅ الاستيراد الصحيح في الإصدار الجديد
+from pytgcalls.types import StreamEnded  # ✅ الاستيراد الصحيح
 
 from music_bot.queue_manager import queue_manager, Track
 
@@ -116,25 +116,27 @@ class MusicPlayer:
 
     def _register_callbacks(self):
         """
-        ✅ طريقة py-tgcalls v2 الجديدة: استخدام @on_stream_end() مباشرة
+        ✅ طريقة py-tgcalls v2: استخدام on_update() مع StreamEnded
         """
-        @self.calls.on_stream_end()
-        async def on_stream_end(_, update: StreamEnded):
-            chat_id = update.chat_id
-            logger.info(f"🔴 انتهى البث في {chat_id}")
-            
-            gq = queue_manager.get(chat_id)
-            next_track = gq.skip()
-            
-            if next_track:
-                await self._start_playback(chat_id)
-            else:
-                gq.is_playing = False
-                try:
-                    await self.calls.leave_call(chat_id)
-                except Exception:
-                    pass
-                logger.info(f"✅ انتهت القائمة في {chat_id}")
+        @self.calls.on_update()
+        async def on_stream_ended(_, update):
+            # التحقق إذا كان التحديث هو انتهاء البث
+            if isinstance(update, StreamEnded):
+                chat_id = update.chat_id
+                logger.info(f"🔴 انتهى البث في {chat_id}")
+                
+                gq = queue_manager.get(chat_id)
+                next_track = gq.skip()
+                
+                if next_track:
+                    await self._start_playback(chat_id)
+                else:
+                    gq.is_playing = False
+                    try:
+                        await self.calls.leave_call(chat_id)
+                    except Exception:
+                        pass
+                    logger.info(f"✅ انتهت القائمة في {chat_id}")
 
     @staticmethod
     async def _fetch(query: str) -> tuple[str, str]:
