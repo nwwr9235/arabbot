@@ -4,7 +4,7 @@ import logging
 import os
 import re
 import asyncio
-import yt_dlp
+import yt-dlp
 from datetime import datetime
 from pyrogram import Client, filters
 from pyrogram.types import ChatPermissions, ChatPrivileges
