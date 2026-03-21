@@ -1,6 +1,6 @@
 """
 music_bot/player.py
-محرك التشغيل الصوتي مع تسجيل كامل
+محرك التشغيل الصوتي — py-tgcalls v2.2.11
 """
 
 import asyncio
@@ -10,8 +10,9 @@ import traceback
 import yt_dlp
 from pyrogram import Client
 from pytgcalls import PyTgCalls
-from pytgcalls.types.input_stream import AudioPiped, AudioParameters
-from pytgcalls.types.stream import StreamEnded
+
+# ✅ استيرادات py-tgcalls 2.2.11 الصحيحة
+from pytgcalls.types import AudioPiped, AudioParameters, StreamEnded
 
 logger = logging.getLogger(__name__)
 
@@ -40,52 +41,44 @@ class MusicPlayer:
         logger.info("✅ MusicPlayer initialized")
 
     async def play(self, chat_id: int, query: str, user_id: int, invited_by: int = None) -> dict:
-        logger.info(f"🎵 Play request: chat={chat_id}, query={query}, user={user_id}")
+        logger.info(f"🎵 Play request: chat={chat_id}, query={query}")
         
-        # ✅ 1. التحقق من البوت في المجموعة
+        # التحقق من البوت في المجموعة
         if self.assistant:
             try:
                 me = await self.assistant.get_me()
-                logger.info(f"🤖 Assistant bot ID: {me.id}")
-                
                 member = await self.assistant.get_chat_member(chat_id, "me")
-                logger.info(f"✅ Bot is member: {member.status}")
-                
-                if member.status not in ["administrator", "member"]:
-                    return {"ok": False, "error": "البوت ليس مشرفاً في المجموعة"}
-                    
+                logger.info(f"✅ Bot status: {member.status}")
             except Exception as e:
-                logger.error(f"❌ Bot not in group {chat_id}: {e}")
+                logger.error(f"❌ Bot not in group: {e}")
                 return {"ok": False, "error": f"البوت ليس في المجموعة: {str(e)}"}
 
-        # ✅ 2. تنزيل الأغنية
+        # تنزيل الأغنية
         try:
             logger.info(f"⬇️ Downloading: {query}")
             title, file_path = await self._fetch(query)
-            logger.info(f"✅ Downloaded: {title} -> {file_path}")
+            logger.info(f"✅ Downloaded: {title}")
         except Exception as e:
             logger.error(f"❌ Download error: {e}")
             logger.error(traceback.format_exc())
             return {"ok": False, "error": f"فشل التنزيل: {str(e)}"}
 
-        # ✅ 3. التحقق من الملف
+        # التحقق من الملف
         if not os.path.exists(file_path):
-            logger.error(f"❌ File not found: {file_path}")
             return {"ok": False, "error": "الملف غير موجود بعد التنزيل"}
         
         file_size = os.path.getsize(file_path)
         logger.info(f"📁 File size: {file_size} bytes")
-        
         if file_size == 0:
             return {"ok": False, "error": "الملف فارغ"}
 
-        # ✅ 4. إضافة للقائمة
+        # إضافة للقائمة
         track = Track(title=title, url=file_path, query=query, user_id=user_id)
         gq = queue_manager.get(chat_id)
         pos = gq.add(track)
-        logger.info(f"📋 Added to queue position: {pos}")
+        logger.info(f"📋 Queue position: {pos}")
 
-        # ✅ 5. بدء التشغيل
+        # بدء التشغيل
         if not gq.is_playing:
             result = await self._start_playback(chat_id)
             if not result["ok"]:
@@ -105,18 +98,18 @@ class MusicPlayer:
         gq.is_paused = False
 
         try:
-            logger.info(f"▶️ Starting playback: {track.title} in {chat_id}")
-            logger.info(f"📂 File: {track.url}")
+            logger.info(f"▶️ Starting: {track.title}")
             
-            # ✅ إنشاء AudioPiped
+            # ✅ استخدام AudioPiped مع AudioParameters
             audio = AudioPiped(
                 track.url,
-                AudioParameters(bitrate=48000, channels=2),
+                AudioParameters(
+                    bitrate=48000,
+                    channels=2,
+                ),
             )
             
-            # ✅ تشغيل مباشر (play)
             await self.calls.play(chat_id, audio)
-            
             logger.info(f"✅ Playing: {track.title}")
             return {"ok": True}
 
@@ -126,7 +119,65 @@ class MusicPlayer:
             gq.is_playing = False
             return {"ok": False, "error": f"فشل التشغيل: {str(e)}"}
 
-    # ... بقية الدوال ...
+    async def stop(self, chat_id: int) -> dict:
+        queue_manager.get(chat_id).clear()
+        try:
+            await self.calls.leave_call(chat_id)
+        except Exception as e:
+            logger.warning(f"Leave error: {e}")
+        return {"ok": True}
+
+    async def skip(self, chat_id: int) -> dict:
+        gq = queue_manager.get(chat_id)
+        next_track = gq.skip()
+        if next_track:
+            await self._start_playback(chat_id)
+            return {"ok": True, "next_title": next_track.title}
+        else:
+            try:
+                await self.calls.leave_call(chat_id)
+            except Exception:
+                pass
+            gq.is_playing = False
+            return {"ok": True, "next_title": None}
+
+    async def pause(self, chat_id: int) -> dict:
+        try:
+            await self.calls.pause_stream(chat_id)
+            queue_manager.get(chat_id).is_paused = True
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    async def resume(self, chat_id: int) -> dict:
+        try:
+            await self.calls.resume_stream(chat_id)
+            queue_manager.get(chat_id).is_paused = False
+            return {"ok": True}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
+    def get_queue(self, chat_id: int) -> dict:
+        return {"ok": True, "queue": queue_manager.get(chat_id).to_list()}
+
+    def _register_callbacks(self):
+        @self.calls.on_update()
+        async def on_stream_ended(_, update):
+            if isinstance(update, StreamEnded):
+                chat_id = update.chat_id
+                logger.info(f"🔴 Stream ended: {chat_id}")
+                
+                gq = queue_manager.get(chat_id)
+                next_track = gq.skip()
+                
+                if next_track:
+                    await self._start_playback(chat_id)
+                else:
+                    gq.is_playing = False
+                    try:
+                        await self.calls.leave_call(chat_id)
+                    except Exception:
+                        pass
 
     @staticmethod
     async def _fetch(query: str) -> tuple[str, str]:
