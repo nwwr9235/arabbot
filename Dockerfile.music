@@ -13,4 +13,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# ✅ ملف الكوكيز لتجاوز قيود يوتيوب
+COPY cookies.txt /app/cookies.txt
+
 CMD ["python", "-m", "music_bot.main"]
