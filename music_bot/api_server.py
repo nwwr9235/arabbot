@@ -1,91 +1,120 @@
 """
 music_bot/api_server.py
-خادم FastAPI — يستقبل الأوامر من بوت الإدارة عبر HTTP
+API مع تسجيل مفصل للأخطاء
 """
 
 import logging
-from fastapi import FastAPI, Request, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from shared.config import MusicConfig
+from music_bot.player import MusicPlayer
 
 logger = logging.getLogger(__name__)
-
-# ─── نماذج البيانات ───────────────────────────────────────────────
+app = FastAPI(title="Music Bot API")
 
 class PlayRequest(BaseModel):
-    chat_id:  int
-    user_id:  int
-    query:    str
-
-class ChatRequest(BaseModel):
     chat_id: int
-    user_id: int = 0
+    query: str
+    user_id: int
+    invited_by: int | None = None
 
-class QueueRequest(BaseModel):
+class ChatActionRequest(BaseModel):
     chat_id: int
+    user_id: int
 
+player_instance: MusicPlayer | None = None
 
-# ─── التحقق من المفتاح السري ─────────────────────────────────────
-
-async def verify_secret(request: Request):
-    """رفض أي طلب لا يحمل المفتاح الصحيح"""
-    secret = request.headers.get("X-Internal-Secret", "")
-    if secret != MusicConfig.INTERNAL_SECRET:
-        raise HTTPException(status_code=403, detail="Forbidden")
-
-
-# ─── بناء التطبيق ────────────────────────────────────────────────
-
-def build_app(player) -> FastAPI:
-    """
-    player: مثيل MusicPlayer يُمرَّر عند إنشاء التطبيق
-    """
-    app = FastAPI(
-        title="Music Bot Internal API",
-        docs_url=None,    # إخفاء Swagger في الإنتاج
-        redoc_url=None,
-    )
-
-    # ── /play ──────────────────────────────────────────────────────
-    @app.post("/play", dependencies=[Depends(verify_secret)])
-    async def play(body: PlayRequest):
-        result = await player.play(body.chat_id, body.query, body.user_id)
-        return JSONResponse(result)
-
-    # ── /stop ──────────────────────────────────────────────────────
-    @app.post("/stop", dependencies=[Depends(verify_secret)])
-    async def stop(body: ChatRequest):
-        result = await player.stop(body.chat_id)
-        return JSONResponse(result)
-
-    # ── /skip ──────────────────────────────────────────────────────
-    @app.post("/skip", dependencies=[Depends(verify_secret)])
-    async def skip(body: ChatRequest):
-        result = await player.skip(body.chat_id)
-        return JSONResponse(result)
-
-    # ── /pause ─────────────────────────────────────────────────────
-    @app.post("/pause", dependencies=[Depends(verify_secret)])
-    async def pause(body: ChatRequest):
-        result = await player.pause(body.chat_id)
-        return JSONResponse(result)
-
-    # ── /resume ────────────────────────────────────────────────────
-    @app.post("/resume", dependencies=[Depends(verify_secret)])
-    async def resume(body: ChatRequest):
-        result = await player.resume(body.chat_id)
-        return JSONResponse(result)
-
-    # ── /queue ─────────────────────────────────────────────────────
-    @app.post("/queue", dependencies=[Depends(verify_secret)])
-    async def queue(body: QueueRequest):
-        result = player.get_queue(body.chat_id)
-        return JSONResponse(result)
-
-    # ── health check ───────────────────────────────────────────────
-    @app.get("/health")
-    async def health():
-        return {"status": "ok", "bot": "music"}
-
+def build_app(player: MusicPlayer) -> FastAPI:
+    global player_instance
+    player_instance = player
     return app
+
+# ✅ Middleware للتسجيل
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    logger.info(f"➡️ {request.method} {request.url.path}")
+    try:
+        response = await call_next(request)
+        logger.info(f"⬅️ {response.status_code}")
+        return response
+    except Exception as e:
+        logger.error(f"❌ Error in {request.url.path}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return JSONResponse(
+            status_code=500,
+            content={"error": str(e)}
+        )
+
+@app.post("/play")
+async def play(request: PlayRequest):
+    """تشغيل أغنية"""
+    logger.info(f"🎵 Play request: chat={request.chat_id}, query={request.query}")
+    
+    if not player_instance:
+        raise HTTPException(500, "Player not initialized")
+    
+    try:
+        result = await player_instance.play(
+            chat_id=request.chat_id,
+            query=request.query,
+            user_id=request.user_id,
+            invited_by=request.invited_by,
+        )
+        
+        if not result["ok"]:
+            logger.error(f"Play failed: {result.get('error')}")
+            raise HTTPException(400, result.get("error", "Unknown error"))
+        
+        logger.info(f"✅ Play success: {result.get('title')}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Exception in play: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise HTTPException(500, str(e))
+
+@app.post("/stop")
+async def stop(request: ChatActionRequest):
+    """إيقاف التشغيل"""
+    if not player_instance:
+        raise HTTPException(500, "Player not initialized")
+    return await player_instance.stop(request.chat_id)
+
+@app.post("/skip")
+async def skip(request: ChatActionRequest):
+    """تخطي الأغنية"""
+    if not player_instance:
+        raise HTTPException(500, "Player not initialized")
+    return await player_instance.skip(request.chat_id)
+
+@app.post("/pause")
+async def pause(request: ChatActionRequest):
+    """إيقاف مؤقت"""
+    if not player_instance:
+        raise HTTPException(500, "Player not initialized")
+    return await player_instance.pause(request.chat_id)
+
+@app.post("/resume")
+async def resume(request: ChatActionRequest):
+    """استئناف التشغيل"""
+    if not player_instance:
+        raise HTTPException(500, "Player not initialized")
+    return await player_instance.resume(request.chat_id)
+
+@app.get("/queue/{chat_id}")
+async def get_queue(chat_id: int):
+    """الحصول على قائمة التشغيل"""
+    if not player_instance:
+        raise HTTPException(500, "Player not initialized")
+    return player_instance.get_queue(chat_id)
+
+@app.get("/health")
+async def health():
+    """فحص صحة النظام"""
+    return {
+        "status": "ok",
+        "player": "initialized" if player_instance else "not ready",
+        "tgcalls": "running" if player_instance and player_instance.calls else "not ready",
+    }
