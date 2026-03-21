@@ -7,7 +7,7 @@ music_bot/main.py
 import asyncio
 import logging
 import uvicorn
-from pyrogram import Client          # pyrofork يُعرِّف نفسه كـ pyrogram
+from pyrogram import Client
 from pytgcalls import PyTgCalls
 
 from shared.config import MusicConfig
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 
 async def main():
-    # ─── 1. Pyrogram Client (pyrofork) ───────────────────────────
+    # ─── 1. Pyrogram Client ───────────────────────────
     pyrogram_client = Client(
         "music_bot_session",
         api_id=MusicConfig.API_ID,
@@ -30,13 +30,13 @@ async def main():
         bot_token=MusicConfig.BOT_TOKEN,
     )
 
-    # ─── 2. PyTgCalls ────────────────────────────────────────────
+    # ─── 2. PyTgCalls ─────────────────────────────────
     tgcalls = PyTgCalls(pyrogram_client)
 
-    # ─── 3. MusicPlayer ──────────────────────────────────────────
+    # ─── 3. MusicPlayer ─────────────────────────────────
     player = MusicPlayer(tgcalls)
 
-    # ─── 4. FastAPI ──────────────────────────────────────────────
+    # ─── 4. FastAPI ─────────────────────────────────────
     fastapi_app = build_app(player)
 
     config = uvicorn.Config(
@@ -50,9 +50,10 @@ async def main():
 
     logger.info(f"🎵 بوت الموسيقى يعمل | API port: {MusicConfig.API_PORT}")
 
+    # ✅ FIXED: لا تستدعِ pyrogram_client.start() منفصلاً
+    # PyTgCalls.start() سيبدأ Pyrogram Client تلقائياً
     await asyncio.gather(
-        pyrogram_client.start(),
-        tgcalls.start(),
+        tgcalls.start(),      # ← هذا يبدأ Pyrogram Client أيضاً
         server.serve(),
     )
 
