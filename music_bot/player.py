@@ -15,9 +15,9 @@ from pytgcalls.types import MediaStream, AudioQuality, StreamEnded
 logger = logging.getLogger(__name__)
 
 YDL_OPTS = {
-    # ✅ format بسيط + no_check_formats هو الحل الحقيقي
-    "format": "bestaudio/best",
-    "no_check_formats": True,       # ✅ يتجاوز خطأ "Requested format is not available"
+    # ✅ bestaudio* يختار أي صيغة صوتية متاحة بدون قيود
+    "format": "bestaudio*/best",
+    "no_check_formats": True,
     "noplaylist": True,
     "quiet": True,
     "no_warnings": True,
