@@ -19,14 +19,29 @@ YDL_OPTS = {
     "noplaylist": True,
     "quiet": True,
     "no_warnings": True,
+
+    # ✅ أهم سطر (cookies)
+    "cookiefile": "/app/cookies.txt",
+
+    # تحسين التوافق مع يوتيوب
+    "extractor_args": {
+        "youtube": {
+            "player_client": ["android", "web"]
+        }
+    },
+
+    # تحسين التحميل
+    "nocheckcertificate": True,
+    "ignoreerrors": True,
+
     "outtmpl": "/tmp/music/%(id)s.%(ext)s",
+
     "postprocessors": [{
         "key": "FFmpegExtractAudio",
         "preferredcodec": "mp3",
         "preferredquality": "192",
     }],
 }
-
 os.makedirs("/tmp/music", exist_ok=True)
 
 
