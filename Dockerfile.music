@@ -11,6 +11,9 @@ COPY music_bot/requirements.txt .
 
 RUN pip install --no-cache-dir -r requirements.txt
 
+# ✅ تحديث yt-dlp لأحدث نسخة (مهم جداً لأن يوتيوب يتغير باستمرار)
+RUN pip install --no-cache-dir --upgrade yt-dlp
+
 COPY . .
 
 # ✅ ملف الكوكيز لتجاوز قيود يوتيوب
