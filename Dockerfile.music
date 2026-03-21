@@ -1,6 +1,6 @@
 FROM python:3.11-slim
 
-# ✅ تثبيت المتطلبات الأساسية لـ NTgCalls
+# ✅ تثبيت المتطلبات الأساسية
 RUN apt-get update && apt-get install -y \
     build-essential \
     cmake \
@@ -11,12 +11,15 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-COPY requirements.txt .
+# ✅ نسخ ملف المتطلبات من المجلد الصحيح
+COPY music_bot/requirements.txt .
+
 RUN pip install --no-cache-dir -r requirements.txt
 
-# ✅ التحقق من التثبيت
-RUN python -c "import ntgcalls; print(f'NTgCalls: {ntgcalls.__version__}')" || echo "NTgCalls check failed"
-
+# ✅ نسخ جميع الملفات
 COPY . .
+
+# ✅ التحقق من التثبيت
+RUN python -c "import ntgcalls; print(f'NTgCalls: {ntgcalls.__version__}')" || echo "Warning: NTgCalls check failed"
 
 CMD ["python", "-m", "music_bot.main"]
