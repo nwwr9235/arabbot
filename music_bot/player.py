@@ -1,6 +1,6 @@
 """
 music_bot/player.py
-محرك التشغيل الصوتي — يستخدم yt-dlp مع دعم كامل للكوكيز
+محرك التشغيل الصوتي — مع حلول شاملة لجميع المشاكل
 """
 
 import asyncio
@@ -8,10 +8,10 @@ import logging
 import os
 import traceback
 import random
+import time
 from pytgcalls import PyTgCalls
 from pytgcalls.types import MediaStream, AudioQuality, StreamEnded
 
-# ✅ استيراد yt-dlp كأساسي
 try:
     import yt_dlp
     YTDLP_AVAILABLE = True
@@ -19,14 +19,20 @@ except ImportError:
     YTDLP_AVAILABLE = False
     logging.warning("yt-dlp not available")
 
-# ✅ pytube كاحتياطي فقط
 try:
     from pytube import YouTube
-    from youtubesearchpython import VideosSearch
     PYTUBE_AVAILABLE = True
 except ImportError as e:
     logging.warning(f"pytube not available: {e}")
     PYTUBE_AVAILABLE = False
+
+# ✅ محاولة استيراد youtube-search بدون بروكسي
+try:
+    from youtubesearchpython import VideosSearch
+    YTSEARCH_AVAILABLE = True
+except ImportError as e:
+    logging.warning(f"youtube-search not available: {e}")
+    YTSEARCH_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -34,113 +40,102 @@ logger = logging.getLogger(__name__)
 class MusicPlayer:
 
     def __init__(self, tgcalls: PyTgCalls, assistant_client=None):
-        # ✅ التحقق السريع من موقع الكوكيز (للتصحيح فقط)
+        # ✅ تصحيح: طباعة معلومات الكوكيز
         current_file_dir = os.path.dirname(os.path.abspath(__file__))
         cookies_path = os.path.join(current_file_dir, "cookies.txt")
         
         print("=" * 60)
-        print(f"🔍 DEBUG: This file is at: {os.path.abspath(__file__)}")
-        print(f"🔍 DEBUG: Looking for cookies at: {cookies_path}")
-        print(f"🔍 DEBUG: File exists: {os.path.exists(cookies_path)}")
-        print(f"🔍 DEBUG: Directory contents: {os.listdir(current_file_dir)}")
+        print(f"🔍 DEBUG: File: {os.path.abspath(__file__)}")
+        print(f"🔍 DEBUG: Cookies: {cookies_path}")
+        print(f"🔍 DEBUG: Exists: {os.path.exists(cookies_path)}")
         print("=" * 60)
         
         self.calls = tgcalls
         self.assistant = assistant_client
         self._register_callbacks()
         
-        # ✅ إعدادات yt-dlp المُحسَّنة
+        # ✅ إعدادات yt-dlp المُحسَّنة جداً
         self.ydl_opts_base = {
-            "format": "bestaudio*/best*/worstaudio*/worst*",
+            # ✅ تنسيق بسيط جداً - أي تنسيق يعمل
+            "format": "best/bestaudio/worst",
             "noplaylist": True,
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
             "socket_timeout": 30,
             "source_address": "0.0.0.0",
-            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            
+            # ✅ محاكاة متصفح حقيقي
+            "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "referer": "https://www.youtube.com/",
             "headers": {
-                "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
                 "Accept-Encoding": "gzip, deflate, br",
                 "DNT": "1",
-                "Connection": "keep-alive",
-                "Upgrade-Insecure-Requests": "1",
             },
+            
+            # ✅ إعدادات YouTube محسّنة
             "extractor_args": {
                 "youtube": {
                     "player_client": "android_vr",
-                    "player_skip": "configs",
+                    "player_skip": "configs,webpage",
                 }
             },
-            "sleep_requests": 0.5,
-            "sleep_interval": 1,
-            "max_sleep_interval": 3,
+            
+            # ✅ تأخيرات
+            "sleep_requests": 1,
+            "sleep_interval": 2,
         }
         
-        # ✅ إعداد الكوكيز من مجلد music_bot
-        self._setup_cookies()
+        # ✅ إعداد الكوكيز
+        self._setup_cookies(cookies_path)
         
-        logger.info(f"✅ MusicPlayer initialized (yt-dlp: {YTDLP_AVAILABLE}, pytube: {PYTUBE_AVAILABLE})")
+        logger.info(f"✅ MusicPlayer initialized")
 
-    def _setup_cookies(self):
-        """إعداد الكوكيز من مجلد music_bot"""
+    def _setup_cookies(self, primary_path):
+        """إعداد الكوكيز"""
         
-        # ✅ المسار الصحيح: مجلد هذا الملف (music_bot)
-        current_file_dir = os.path.dirname(os.path.abspath(__file__))
-        cookies_path = os.path.join(current_file_dir, "cookies.txt")
-        
-        if os.path.exists(cookies_path):
-            self.ydl_opts_base["cookiefile"] = cookies_path
-            logger.info(f"✅ Cookies loaded from: {cookies_path}")
+        if os.path.exists(primary_path):
+            self.ydl_opts_base["cookiefile"] = primary_path
+            logger.info(f"✅ Cookies: {primary_path}")
             
-            # ✅ التحقق من صحة الملف
+            # ✅ التحقق من صلاحية الكوكيز (قراءة أول سطر)
             try:
-                with open(cookies_path, 'r') as f:
-                    lines = f.readlines()
-                    logger.info(f"✅ Cookies file has {len(lines)} lines")
+                with open(primary_path, 'r') as f:
+                    content = f.read()
+                    lines = [l for l in content.split('\n') if l.strip() and not l.startswith('#')]
+                    logger.info(f"✅ Cookies file: {len(lines)} valid lines")
+                    
+                    # ✅ تحذير إذا كان الملف قديماً
+                    if "youtube.com" not in content:
+                        logger.warning("⚠️ Cookies may be invalid (no youtube.com found)")
+                        
             except Exception as e:
                 logger.warning(f"⚠️ Cannot read cookies: {e}")
         else:
-            logger.error(f"❌ Cookies NOT FOUND at: {cookies_path}")
-            # ✅ محاولة المواقع البديلة
-            alt_paths = [
-                "cookies.txt",
-                "/app/cookies.txt",
-                "/app/music_bot/cookies.txt",
-            ]
-            for alt in alt_paths:
-                if os.path.exists(alt):
-                    self.ydl_opts_base["cookiefile"] = alt
-                    logger.info(f"✅ Found cookies at alternative: {alt}")
-                    break
+            logger.error(f"❌ Cookies NOT found: {primary_path}")
 
     async def play(self, chat_id: int, query: str, user_id: int, invited_by: int = None) -> dict:
-        logger.info(f"{'='*50}")
-        logger.info(f"🎵 PLAY REQUEST: chat_id={chat_id}, query='{query}', user_id={user_id}")
+        logger.info(f"🎵 PLAY: chat_id={chat_id}, query='{query}'")
         
-        # التحقق من البوت في المجموعة
+        # التحقق من البوت
         if self.assistant:
             try:
-                me = await self.assistant.get_me()
                 member = await self.assistant.get_chat_member(chat_id, "me")
                 logger.info(f"✅ Bot status: {member.status}")
             except Exception as e:
-                logger.error(f"❌ Bot not in group: {e}")
                 return {"ok": False, "error": f"البوت ليس في المجموعة: {str(e)}"}
 
-        # ✅ جلب رابط الأغنية
+        # ✅ جلب الرابط
         try:
-            logger.info(f"🔍 Searching for: {query}")
             title, stream_url = await self._get_stream_url_with_retry(query)
-            logger.info(f"✅ Found: {title}")
+            logger.info(f"✅ Found: {title[:50]}...")
         except Exception as e:
             logger.error(f"❌ SEARCH ERROR: {e}")
-            logger.error(traceback.format_exc())
             return {"ok": False, "error": f"فشل جلب الأغنية: {str(e)}"}
 
-        # إضافة للقائمة والتشغيل
+        # إضافة للقائمة
         track = Track(title=title, url=stream_url, query=query, user_id=user_id)
         gq = queue_manager.get(chat_id)
         pos = gq.add(track)
@@ -153,13 +148,15 @@ class MusicPlayer:
         return {"ok": True, "title": title, "position": pos}
 
     async def _get_stream_url_with_retry(self, query: str, max_retries: int = 3) -> tuple[str, str]:
-        """الحصول على الرابط مع إعادة المحاولة"""
+        """محاولة متعددة مع استراتيجيات مختلفة"""
         
         last_error = None
         
         for attempt in range(max_retries):
             try:
                 logger.info(f"🔄 Attempt {attempt + 1}/{max_retries}")
+                
+                # ✅ تغيير الاستراتيجية في كل محاولة
                 result = await self._get_stream_url(query, attempt)
                 
                 if result and result[0] and result[1]:
@@ -167,208 +164,161 @@ class MusicPlayer:
                     
             except Exception as e:
                 last_error = e
-                logger.warning(f"⚠️ Attempt {attempt + 1} failed: {e}")
+                logger.warning(f"⚠️ Attempt {attempt + 1} failed: {str(e)[:100]}")
                 
                 if attempt < max_retries - 1:
-                    delay = random.uniform(1, 3)
-                    logger.info(f"⏳ Waiting {delay:.1f}s before retry...")
+                    delay = random.uniform(2, 5)
+                    logger.info(f"⏳ Waiting {delay:.1f}s...")
                     await asyncio.sleep(delay)
         
         raise Exception(f"فشل بعد {max_retries} محاولات: {last_error}")
 
     async def _get_stream_url(self, query: str, attempt: int = 0) -> tuple[str, str]:
-        """الحصول على رابط مباشر"""
+        """استراتيجيات متعددة للاستخراج"""
         
         loop = asyncio.get_event_loop()
         
-        # ✅ المحاولة 1: yt-dlp
+        # ✅ استراتيجية 1: yt-dlp مع تغيير الإعدادات
         if YTDLP_AVAILABLE:
             try:
                 opts = self._get_ytdlp_opts_for_attempt(attempt)
                 return await loop.run_in_executor(None, self._get_ytdlp_url, query, opts)
             except Exception as e:
-                logger.warning(f"⚠️ yt-dlp failed (attempt {attempt}): {e}")
+                logger.warning(f"⚠️ yt-dlp failed: {str(e)[:80]}")
         
-        # ✅ المحاولة 2: pytube
-        if PYTUBE_AVAILABLE:
+        # ✅ استراتيجية 2: pytube مباشر (بدون بحث)
+        if PYTUBE_AVAILABLE and query.startswith("http"):
             try:
-                return await loop.run_in_executor(None, self._get_pytube_url, query)
+                return await loop.run_in_executor(None, self._get_pytube_direct, query)
             except Exception as e:
-                logger.warning(f"⚠️ pytube failed: {e}")
+                logger.warning(f"⚠️ pytube direct failed: {e}")
+        
+        # ✅ استراتيجية 3: yt-dlp بدون كوكيز (آخر محاولة)
+        if attempt >= 2 and YTDLP_AVAILABLE:
+            try:
+                opts = self.ydl_opts_base.copy()
+                if "cookiefile" in opts:
+                    del opts["cookiefile"]  # إزالة الكوكيز
+                opts["extractor_args"]["youtube"]["player_client"] = "web_embedded"
+                return await loop.run_in_executor(None, self._get_ytdlp_url, query, opts)
+            except Exception as e:
+                logger.warning(f"⚠️ yt-dlp no-cookies failed: {e}")
         
         raise Exception("جميع المصادر فشلت")
 
     def _get_ytdlp_opts_for_attempt(self, attempt: int) -> dict:
-        """تعديل الإعدادات حسب المحاولة"""
+        """تغيير الإعدادات حسب المحاولة"""
         
         opts = self.ydl_opts_base.copy()
         
-        formats = [
-            "bestaudio*/best*/worstaudio*/worst*",
-            "best*/bestaudio*",
-            "worst*",
-        ]
-        
+        # ✅ تغيير التنسيق
+        formats = ["best", "bestaudio", "worst", "18"]  # 18 = 360p MP4
         if attempt < len(formats):
             opts["format"] = formats[attempt]
-            logger.info(f"🔄 Using format: {formats[attempt]}")
+            logger.info(f"🔄 Format: {formats[attempt]}")
         
-        if attempt == 2:
-            opts["extractor_args"]["youtube"]["player_client"] = "web_embedded"
-            logger.info("🔄 Using fallback client: web_embedded")
+        # ✅ تغيير العميل
+        clients = ["android_vr", "web_safari", "web_embedded"]
+        if attempt < len(clients):
+            opts["extractor_args"]["youtube"]["player_client"] = clients[attempt]
+            logger.info(f"🔄 Client: {clients[attempt]}")
+        
+        # ✅ المحاولة الأخيرة: بدون كوكيز
+        if attempt == 2 and "cookiefile" in opts:
+            del opts["cookiefile"]
+            logger.info("🔄 No cookies")
         
         return opts
 
-    def _get_ytdlp_url(self, query: str, opts: dict = None) -> tuple[str, str]:
-        """استخدام yt-dlp"""
-        
-        if opts is None:
-            opts = self.ydl_opts_base
+    def _get_ytdlp_url(self, query: str, opts: dict) -> tuple[str, str]:
+        """yt-dlp مع معالجة أخطاء محسّنة"""
         
         search = query if query.startswith("http") else f"ytsearch1:{query}"
         
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
-                logger.info(f"🔍 Extracting: {search[:50]}...")
+                logger.info(f"🔍 yt-dlp: {search[:40]}...")
                 
                 info = ydl.extract_info(search, download=False)
                 
-                if info is None:
-                    raise Exception("لم يتم استلام معلومات")
+                if not info:
+                    raise Exception("No info returned")
                 
                 if "entries" in info:
                     entries = info["entries"]
-                    if not entries or len(entries) == 0:
-                        raise Exception("لا توجد نتائج")
+                    if not entries:
+                        raise Exception("No results")
                     info = entries[0]
                 
-                title = info.get('title', query)
+                title = info.get('title', 'Unknown')
                 
-                # ✅ البحث عن أي رابط متاح
+                # ✅ البحث عن الرابط بأي طريقة
                 url = None
+                
+                # 1. من التنسيقات
                 formats = info.get('formats', [])
-                
                 if formats:
-                    audio_only = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') == 'none']
-                    video_audio = [f for f in formats if f.get('acodec') != 'none' and f.get('vcodec') != 'none']
-                    any_format = [f for f in formats if f.get('url')]
-                    
-                    for fmt_list in [audio_only, video_audio, any_format]:
-                        if fmt_list:
-                            url = fmt_list[0].get('url')
-                            if url:
-                                logger.info(f"✅ Selected: {fmt_list[0].get('format_id', 'unknown')}")
-                                break
+                    # أي تنسيق يعمل
+                    for f in formats:
+                        url = f.get('url')
+                        if url and url.startswith('http'):
+                            logger.info(f"✅ Format: {f.get('format_id', 'unknown')}")
+                            break
                 
+                # 2. الرابط المباشر
                 if not url:
                     url = info.get('url')
                 
-                if not url:
-                    raise Exception("لا يوجد رابط مباشر")
+                if not url or not url.startswith('http'):
+                    raise Exception("No valid URL found")
                 
-                if not url.startswith('http'):
-                    raise Exception(f"رابط غير صالح: {url[:50]}")
-                
-                logger.info(f"✅ yt-dlp success: {title}")
+                logger.info(f"✅ yt-dlp success: {title[:40]}")
                 return title, url
                 
         except Exception as e:
-            error_msg = str(e)
-            logger.error(f"❌ yt-dlp error: {error_msg}")
+            error = str(e)
             
-            if "Requested format is not available" in error_msg:
-                raise Exception("التنسيق غير متاح")
-            elif "Sign in to confirm" in error_msg:
-                raise Exception("YouTube يتطلب تسجيل الدخول - تحقق من الكوكيز")
-            elif "bot" in error_msg.lower():
-                raise Exception("تم كشف البوت")
+            # ✅ تحليل الخطأ
+            if "format is not available" in error:
+                raise Exception("Format not available - try different video")
+            elif "Sign in" in error:
+                raise Exception("Sign in required - cookies invalid")
+            elif "bot" in error.lower():
+                raise Exception("Bot detected by YouTube")
             else:
-                raise
+                raise Exception(f"yt-dlp: {error[:80]}")
 
-    def _get_pytube_url(self, query: str) -> tuple[str, str]:
-        """استخدام pytube - بدون بروكسي"""
-        
-        if query.startswith("http"):
-            try:
-                yt = YouTube(query)
-                title = yt.title
-                
-                audio_stream = None
-                try:
-                    audio_stream = yt.streams.filter(only_audio=True).first()
-                except Exception:
-                    pass
-                
-                if not audio_stream:
-                    try:
-                        audio_stream = yt.streams.get_audio_only()
-                    except Exception:
-                        pass
-                
-                if not audio_stream:
-                    try:
-                        audio_stream = yt.streams.first()
-                    except Exception:
-                        pass
-                
-                if not audio_stream:
-                    raise Exception("لا يوجد تدفق")
-                
-                return title, audio_stream.url
-                
-            except Exception as e:
-                raise Exception(f"pytube failed: {e}")
-        
-        # ✅ البحث
-        logger.info(f"🔍 youtube-search: {query}")
+    def _get_pytube_direct(self, url: str) -> tuple[str, str]:
+        """pytube مباشر بدون بحث"""
         
         try:
-            search = VideosSearch(query, limit=5)
-            results = search.result()
-        except Exception as e:
-            raise Exception(f"فشل البحث: {e}")
-        
-        if not results or not results.get('result'):
-            raise Exception("لا توجد نتائج")
-        
-        for i, video in enumerate(results['result']):
-            try:
-                video_url = video.get('link')
-                if not video_url:
-                    continue
-                    
-                title = video.get('title', 'unknown')
-                logger.info(f"🎬 Trying [{i+1}]: {title}")
-                
-                yt = YouTube(video_url)
-                real_title = yt.title
-                
-                audio_stream = None
+            yt = YouTube(url)
+            title = yt.title
+            
+            # ✅ محاولة جميع الطرق
+            stream = None
+            
+            methods = [
+                lambda: yt.streams.filter(only_audio=True).first(),
+                lambda: yt.streams.get_audio_only(),
+                lambda: yt.streams.first(),
+            ]
+            
+            for method in methods:
                 try:
-                    audio_stream = yt.streams.filter(only_audio=True).first()
+                    stream = method()
+                    if stream:
+                        break
                 except Exception:
-                    pass
-                
-                if not audio_stream:
-                    try:
-                        audio_stream = yt.streams.get_audio_only()
-                    except Exception:
-                        pass
-                
-                if not audio_stream:
-                    try:
-                        audio_stream = yt.streams.first()
-                    except Exception:
-                        pass
-                
-                if audio_stream:
-                    return real_title, audio_stream.url
-                    
-            except Exception as e:
-                logger.warning(f"⚠️ فشلت {i+1}: {e}")
-                continue
-        
-        raise Exception("جميع نتائج pytube فشلت")
+                    continue
+            
+            if not stream:
+                raise Exception("No stream found")
+            
+            return title, stream.url
+            
+        except Exception as e:
+            raise Exception(f"pytube: {e}")
 
     async def _start_playback(self, chat_id: int) -> dict:
         """بدء التشغيل"""
@@ -376,26 +326,22 @@ class MusicPlayer:
         track = gq.current()
         
         if not track:
-            gq.is_playing = False
             return {"ok": False, "error": "لا يوجد أغنية"}
 
         gq.is_playing = True
-        gq.is_paused = False
 
         try:
-            logger.info(f"▶️ Starting: {track.title}")
-            
             stream = MediaStream(
                 track.url,
                 audio_parameters=AudioQuality.HIGH,
             )
             
             await self.calls.play(chat_id, stream)
-            logger.info(f"✅ Playing: {track.title}")
+            logger.info(f"✅ Playing: {track.title[:40]}")
             return {"ok": True}
 
         except Exception as e:
-            logger.error(f"❌ Playback error: {e}")
+            logger.error(f"❌ Playback: {e}")
             gq.is_playing = False
             return {"ok": False, "error": f"فشل التشغيل: {str(e)}"}
 
@@ -404,8 +350,6 @@ class MusicPlayer:
         async def on_stream_ended(_, update):
             if isinstance(update, StreamEnded):
                 chat_id = update.chat_id
-                logger.info(f"🔴 Stream ended: {chat_id}")
-                
                 gq = queue_manager.get(chat_id)
                 next_track = gq.skip()
                 
