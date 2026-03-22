@@ -174,37 +174,45 @@ class MusicPlayer:
         raise Exception(f"فشل بعد {max_retries} محاولات: {last_error}")
 
     async def _get_stream_url(self, query: str, attempt: int = 0) -> tuple[str, str]:
-        """استراتيجيات متعددة للاستخراج"""
+        """استراتيجيات متعددة — يوتيوب أولاً ثم SoundCloud"""
         
         loop = asyncio.get_event_loop()
         
-        # ✅ استراتيجية 1: yt-dlp مع تغيير الإعدادات
+        # ✅ استراتيجية 1: yt-dlp YouTube
         if YTDLP_AVAILABLE:
             try:
                 opts = self._get_ytdlp_opts_for_attempt(attempt)
                 return await loop.run_in_executor(None, self._get_ytdlp_url, query, opts)
             except Exception as e:
-                logger.warning(f"⚠️ yt-dlp failed: {str(e)[:80]}")
+                logger.warning(f"⚠️ yt-dlp YouTube failed: {str(e)[:80]}")
         
-        # ✅ استراتيجية 2: pytube مباشر (بدون بحث)
+        # ✅ استراتيجية 2: SoundCloud عبر yt-dlp
+        if YTDLP_AVAILABLE:
+            try:
+                logger.info(f"🎵 Trying SoundCloud for: {query}")
+                return await loop.run_in_executor(None, self._get_soundcloud_url, query)
+            except Exception as e:
+                logger.warning(f"⚠️ SoundCloud failed: {str(e)[:80]}")
+
+        # ✅ استراتيجية 3: pytube مباشر
         if PYTUBE_AVAILABLE and query.startswith("http"):
             try:
                 return await loop.run_in_executor(None, self._get_pytube_direct, query)
             except Exception as e:
                 logger.warning(f"⚠️ pytube direct failed: {e}")
         
-        # ✅ استراتيجية 3: yt-dlp بدون كوكيز (آخر محاولة)
+        # ✅ استراتيجية 4: yt-dlp بدون كوكيز
         if attempt >= 2 and YTDLP_AVAILABLE:
             try:
                 opts = self.ydl_opts_base.copy()
                 if "cookiefile" in opts:
-                    del opts["cookiefile"]  # إزالة الكوكيز
+                    del opts["cookiefile"]
                 opts["extractor_args"]["youtube"]["player_client"] = "web_embedded"
                 return await loop.run_in_executor(None, self._get_ytdlp_url, query, opts)
             except Exception as e:
                 logger.warning(f"⚠️ yt-dlp no-cookies failed: {e}")
         
-        raise Exception("جميع المصادر فشلت")
+        raise Exception("جميع المصادر فشلت — يوتيوب و SoundCloud")
 
     def _get_ytdlp_opts_for_attempt(self, attempt: int) -> dict:
         """تغيير الإعدادات حسب المحاولة"""
@@ -287,6 +295,56 @@ class MusicPlayer:
                 raise Exception("Bot detected by YouTube")
             else:
                 raise Exception(f"yt-dlp: {error[:80]}")
+
+
+    def _get_soundcloud_url(self, query: str) -> tuple[str, str]:
+        """البحث في SoundCloud عبر yt-dlp"""
+        
+        sc_opts = {
+            "format": "bestaudio/best",
+            "noplaylist": True,
+            "quiet": True,
+            "no_warnings": True,
+            "skip_download": True,
+            "socket_timeout": 30,
+        }
+        
+        # البحث في SoundCloud
+        search = f"scsearch1:{query}"
+        logger.info(f"🔍 SoundCloud search: {query}")
+        
+        with yt_dlp.YoutubeDL(sc_opts) as ydl:
+            info = ydl.extract_info(search, download=False)
+            
+            if not info:
+                raise Exception("No SoundCloud results")
+            
+            if "entries" in info:
+                entries = [e for e in info["entries"] if e]
+                if not entries:
+                    raise Exception("No SoundCloud entries")
+                info = entries[0]
+            
+            title = info.get("title", query)
+            
+            # استخراج الرابط المباشر
+            formats = info.get("formats", [])
+            url = None
+            
+            for f in formats:
+                u = f.get("url", "")
+                if u and u.startswith("http"):
+                    url = u
+                    break
+            
+            if not url:
+                url = info.get("url", "")
+            
+            if not url:
+                raise Exception("No SoundCloud URL found")
+            
+            logger.info(f"✅ SoundCloud found: {title[:50]}")
+            return title, url
 
     def _get_pytube_direct(self, url: str) -> tuple[str, str]:
         """pytube مباشر بدون بحث"""
@@ -409,4 +467,5 @@ class GroupQueue:
     
     def to_list(self):
         return [{"title": t.title, "user_id": t.user_id} for t in self.tracks]
+
 
