@@ -14,7 +14,7 @@ uvicorn[standard]>=0.29.0
 pydantic>=2.0.0
 
 # ✅ استخراج YouTube - yt-dlp أساسي (محدث)
-yt-dlp>=2024.12.0
+yt-dlp>=2026.1.0
 
 # ✅ إضافات yt-dlp الموصى بها
 # brotli>=1.1.0          # ضغط أفضل
